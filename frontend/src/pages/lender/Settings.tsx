@@ -1,0 +1,43 @@
+import { useRole } from '@/context/RoleContext';
+import { Card } from '@/components/shared/UI';
+import { CheckCircle } from 'lucide-react';
+
+export default function LenderSettings() {
+    const { lender } = useRole();
+    return (
+        <div className="max-w-2xl space-y-6">
+            <h1 className="text-2xl font-bold text-white">Settings</h1>
+
+            <Card>
+                <h2 className="text-base font-bold text-white mb-4">Institution Profile</h2>
+                <div className="space-y-3">
+                    {[
+                        ['Institution Name', lender.name],
+                        ['Contact Person', lender.contactPerson],
+                        ['Email', lender.email],
+                        ['Phone', lender.phone],
+                        ['NBFC / License Number', lender.licenseNumber],
+                        ['Lender ID', lender.id],
+                    ].map(([label, value]) => (
+                        <div key={label} className="flex justify-between items-center py-2 border-b border-[#30363d] last:border-0">
+                            <span className="text-slate-500 text-sm">{label}</span>
+                            <span className="text-slate-200 text-sm font-medium font-mono">{value}</span>
+                        </div>
+                    ))}
+                </div>
+            </Card>
+
+            <Card>
+                <h2 className="text-base font-bold text-white mb-4">Platform Information</h2>
+                <div className="space-y-2 text-sm text-slate-400">
+                    <p className="flex items-start gap-2"><CheckCircle size={14} className="text-emerald-400 mt-0.5 flex-shrink-0" /> You only access applications submitted to your institution.</p>
+                    <p className="flex items-start gap-2"><CheckCircle size={14} className="text-emerald-400 mt-0.5 flex-shrink-0" /> Your decisions are independent and do not affect other lenders.</p>
+                    <p className="flex items-start gap-2"><CheckCircle size={14} className="text-emerald-400 mt-0.5 flex-shrink-0" /> The AI credit assessment is a decision-support tool only. You retain full authority over lending decisions.</p>
+                    <p className="flex items-start gap-2"><CheckCircle size={14} className="text-emerald-400 mt-0.5 flex-shrink-0" /> This is an academic prototype. All data is synthetic and no real transactions occur.</p>
+                </div>
+            </Card>
+
+            <div className="text-xs text-slate-600 text-center">BeneScore Academic Prototype · CSE Minor Project · Phase 1 (Frontend Mock)</div>
+        </div>
+    );
+}
