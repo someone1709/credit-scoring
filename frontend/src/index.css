@@ -37,6 +37,11 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
+/* A wide table inside a grid column must scroll in place, not stretch the column off-screen. */
+.grid > * {
+  min-width: 0;
+}
+
 /* Custom scrollbar */
 ::-webkit-scrollbar {
   width: 6px;

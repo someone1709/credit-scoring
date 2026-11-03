@@ -1,12 +1,27 @@
-import { useRole } from '@/context/RoleContext';
-import { useApp } from '@/context/AppContext';
+import { useState } from 'react';
+import { useLender } from '@/context/useAuth';
+import { useApp } from '@/context/useApp';
 import { Card } from '@/components/shared/UI';
 import {
     BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer,
     PieChart, Pie, Cell, LineChart, Line, CartesianGrid, Legend,
 } from 'recharts';
 
-const MONTHS = ['Aug', 'Sep', 'Oct'];
+const TREND_MONTHS = 6;
+
+/** The last few calendar months, oldest first, including empty ones so the trend isn't misleading. */
+function recentMonths(count: number, now: Date) {
+    return Array.from({ length: count }, (_, i) => {
+        const date = new Date(now.getFullYear(), now.getMonth() - (count - 1 - i), 1);
+        return { year: date.getFullYear(), month: date.getMonth(), label: date.toLocaleDateString('en-IN', { month: 'short' }) };
+    });
+}
+
+function inMonth(iso: string, { year, month }: { year: number; month: number }) {
+    const date = new Date(iso);
+    return date.getFullYear() === year && date.getMonth() === month;
+}
+
 const RISK_COLORS: Record<string, string> = { LOW: '#10b981', MEDIUM: '#f59e0b', HIGH: '#ef4444' };
 
 const tooltipStyle = {
@@ -16,10 +31,11 @@ const tooltipStyle = {
 };
 
 export default function Analytics() {
-    const { lender } = useRole();
+    const lender = useLender();
     const { getApplicationsByLender, getOffersByLender } = useApp();
     const apps = getApplicationsByLender(lender.id);
     const offers = getOffersByLender(lender.id);
+    const [now] = useState(() => new Date());
 
     // Decision distribution
     const decisionCounts = apps.reduce((acc, a) => {
@@ -36,14 +52,16 @@ export default function Analytics() {
         if (a.assessment) { const r = a.assessment.risk_category; acc[r] = (acc[r] || 0) + 1; }
         return acc;
     }, {} as Record<string, number>);
-    const riskData = Object.entries(riskCounts).map(([name, value]) => ({ name, value, fill: RISK_COLORS[name] }));
+    const riskData = ['LOW', 'MEDIUM', 'HIGH']
+        .filter(name => riskCounts[name])
+        .map(name => ({ name, value: riskCounts[name], fill: RISK_COLORS[name] }));
 
-    // Offer conversion trend (mock monthly)
-    const trendData = MONTHS.map((month, i) => ({
-        month,
-        Applications: 1 + i,
-        'Offers Made': i > 0 ? 1 : 0,
-        'Accepted': i > 1 ? 1 : 0,
+    // Counted from this lender's own applications and offers.
+    const trendData = recentMonths(TREND_MONTHS, now).map(month => ({
+        month: month.label,
+        Applications: apps.filter(a => inMonth(a.submittedAt, month)).length,
+        'Offers Made': offers.filter(o => inMonth(o.createdAt, month)).length,
+        Accepted: offers.filter(o => o.status === 'ACCEPTED' && inMonth(o.createdAt, month)).length,
     }));
 
     // Income bracket
@@ -56,7 +74,8 @@ export default function Analytics() {
         value,
     }));
 
-    const totalOffered = offers.reduce((s, o) => s + o.amount, 0);
+    // Withdrawn, declined and expired offers aren't money on offer any more.
+    const totalOffered = offers.filter(o => o.status === 'PENDING' || o.status === 'ACCEPTED').reduce((s, o) => s + o.amount, 0);
     const acceptedOffers = offers.filter(o => o.status === 'ACCEPTED');
     const totalAccepted = acceptedOffers.reduce((s, o) => s + o.amount, 0);
 
@@ -64,7 +83,7 @@ export default function Analytics() {
         <div className="space-y-6">
             <div>
                 <h1 className="text-2xl font-bold text-white">Analytics</h1>
-                <p className="text-slate-500 mt-1 text-sm">Lending activity overview for {lender.name}.</p>
+                <p className="text-slate-500 mt-1 text-sm">Lending activity for {lender.name}, from simulated data. Accepted offers are counted in the month the offer was made.</p>
             </div>
 
             {/* Summary KPIs */}
@@ -72,7 +91,7 @@ export default function Analytics() {
                 {[
                     { label: 'Total Applications', value: apps.length },
                     { label: 'Offers Made', value: offers.length },
-                    { label: 'Total Offered', value: `₹${(totalOffered / 1000).toFixed(0)}K` },
+                    { label: 'Active + Accepted', value: `₹${(totalOffered / 1000).toFixed(0)}K` },
                     { label: 'Total Accepted', value: `₹${(totalAccepted / 1000).toFixed(0)}K` },
                 ].map(({ label, value }) => (
                     <Card key={label} className="text-center">
@@ -89,7 +108,7 @@ export default function Analytics() {
                     <ResponsiveContainer width="100%" height={200}>
                         <BarChart data={decisionData} barSize={28}>
                             <XAxis dataKey="name" tick={{ fill: '#94a3b8', fontSize: 11 }} axisLine={false} tickLine={false} />
-                            <YAxis tick={{ fill: '#64748b', fontSize: 11 }} axisLine={false} tickLine={false} allowDecimals={false} />
+                            <YAxis width={28} tick={{ fill: '#64748b', fontSize: 11 }} axisLine={false} tickLine={false} allowDecimals={false} />
                             <Tooltip {...tooltipStyle} />
                             <Bar dataKey="value" fill="#10b981" radius={[4, 4, 0, 0]} />
                         </BarChart>
@@ -100,8 +119,8 @@ export default function Analytics() {
                 <Card>
                     <h2 className="text-sm font-semibold text-slate-400 uppercase tracking-wide mb-4">Risk Category Distribution</h2>
                     {riskData.length > 0 ? (
-                        <div className="flex items-center gap-6">
-                            <ResponsiveContainer width="50%" height={180}>
+                        <div className="flex flex-col sm:flex-row sm:items-center gap-4 sm:gap-6">
+                            <ResponsiveContainer width="100%" height={180} className="sm:max-w-[50%]">
                                 <PieChart>
                                     <Pie data={riskData} cx="50%" cy="50%" innerRadius={40} outerRadius={70} dataKey="value" paddingAngle={3}>
                                         {riskData.map((e, i) => <Cell key={i} fill={e.fill} />)}
@@ -127,17 +146,17 @@ export default function Analytics() {
 
             {/* Offer Conversion Trend */}
             <Card>
-                <h2 className="text-sm font-semibold text-slate-400 uppercase tracking-wide mb-4">Offer Conversion Trend (Simulated)</h2>
+                <h2 className="text-sm font-semibold text-slate-400 uppercase tracking-wide mb-4">Applications and Offers by Month</h2>
                 <ResponsiveContainer width="100%" height={200}>
                     <LineChart data={trendData}>
                         <CartesianGrid strokeDasharray="3 3" stroke="#30363d" />
                         <XAxis dataKey="month" tick={{ fill: '#94a3b8', fontSize: 11 }} axisLine={false} tickLine={false} />
-                        <YAxis tick={{ fill: '#64748b', fontSize: 11 }} axisLine={false} tickLine={false} allowDecimals={false} />
+                        <YAxis width={28} tick={{ fill: '#64748b', fontSize: 11 }} axisLine={false} tickLine={false} allowDecimals={false} />
                         <Tooltip {...tooltipStyle} />
                         <Legend wrapperStyle={{ color: '#94a3b8', fontSize: 12 }} />
-                        <Line type="monotone" dataKey="Applications" stroke="#3b82f6" strokeWidth={2} dot={{ fill: '#3b82f6' }} />
-                        <Line type="monotone" dataKey="Offers Made" stroke="#10b981" strokeWidth={2} dot={{ fill: '#10b981' }} />
-                        <Line type="monotone" dataKey="Accepted" stroke="#f59e0b" strokeWidth={2} dot={{ fill: '#f59e0b' }} />
+                        <Line type="linear" dataKey="Applications" stroke="#3b82f6" strokeWidth={2} dot={{ fill: '#3b82f6' }} />
+                        <Line type="linear" dataKey="Offers Made" stroke="#10b981" strokeWidth={2} dot={{ fill: '#10b981' }} />
+                        <Line type="linear" dataKey="Accepted" stroke="#f59e0b" strokeWidth={2} dot={{ fill: '#f59e0b' }} />
                     </LineChart>
                 </ResponsiveContainer>
             </Card>

@@ -1,5 +1,5 @@
-import { useRole } from '@/context/RoleContext';
-import { useApp } from '@/context/AppContext';
+import { useAuth } from '@/context/useAuth';
+import { useApp } from '@/context/useApp';
 import { Card, EmptyState } from '@/components/shared/UI';
 import { Bell, CheckCheck } from 'lucide-react';
 import clsx from 'clsx';
@@ -16,9 +16,12 @@ function formatDate(iso: string) {
 }
 
 export default function Notifications() {
-    const { beneficiary } = useRole();
+    const { user } = useAuth();
     const { getNotificationsByUser, markNotificationRead, markAllNotificationsRead } = useApp();
-    const notifications = getNotificationsByUser(beneficiary.id);
+    if (!user) return null;
+
+    const userId = user.profile.id;
+    const notifications = getNotificationsByUser(userId);
     const unread = notifications.filter(n => !n.read).length;
 
     return (
@@ -30,7 +33,7 @@ export default function Notifications() {
                 </div>
                 {unread > 0 && (
                     <button
-                        onClick={() => markAllNotificationsRead(beneficiary.id)}
+                        onClick={() => markAllNotificationsRead(userId)}
                         className="flex items-center gap-1.5 px-3 py-2 bg-[#1c2333] hover:bg-[#212842] border border-[#30363d] text-slate-400 hover:text-white rounded-lg text-sm transition-colors"
                     >
                         <CheckCheck size={14} /> Mark all read
@@ -39,7 +42,7 @@ export default function Notifications() {
             </div>
 
             {notifications.length === 0 ? (
-                <EmptyState icon={<Bell size={40} />} title="No notifications" description="You'll see loan updates and offers here." />
+                <EmptyState icon={<Bell size={40} />} title="No notifications" description={user.role === 'lender' ? "You'll see new applications and offer updates here." : "You'll see loan updates and offers here."} />
             ) : (
                 <Card className="p-0 overflow-hidden">
                     {notifications.map((n) => (

@@ -1,7 +1,8 @@
+import { useState } from 'react';
 import { Link } from 'react-router-dom';
-import { useRole } from '@/context/RoleContext';
-import { useApp } from '@/context/AppContext';
-import { Card, EmptyState } from '@/components/shared/UI';
+import { useLender } from '@/context/useAuth';
+import { useApp } from '@/context/useApp';
+import { ActionError, Card, EmptyState } from '@/components/shared/UI';
 import { StatusBadge } from '@/components/shared/StatusBadge';
 import { Gift } from 'lucide-react';
 
@@ -9,9 +10,19 @@ function fmt(n: number) { return '₹' + n.toLocaleString('en-IN'); }
 function fmtDate(iso: string) { return new Date(iso).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }); }
 
 export default function MyOffers() {
-    const { lender } = useRole();
-    const { getOffersByLender, applications } = useApp();
+    const lender = useLender();
+    const { getOffersByLender, getLenderApplication, withdrawOffer } = useApp();
     const offers = getOffersByLender(lender.id);
+    const [error, setError] = useState<string | null>(null);
+
+    const withdraw = (applicationId: string, offerId: string) => {
+        setError(null);
+        try {
+            withdrawOffer(applicationId, lender, offerId);
+        } catch (e) {
+            setError(e instanceof Error ? e.message : 'Something went wrong. Please try again.');
+        }
+    };
 
     return (
         <div className="space-y-6">
@@ -19,6 +30,7 @@ export default function MyOffers() {
                 <h1 className="text-2xl font-bold text-white">My Offers</h1>
                 <p className="text-slate-500 mt-1 text-sm">All loan offers made by {lender.name}.</p>
             </div>
+            <ActionError message={error} />
             {offers.length === 0 ? (
                 <EmptyState icon={<Gift size={40} />} title="No offers yet" description="Review applications to create loan offers." action={<Link to="/lender/applications" className="px-4 py-2 bg-emerald-500 text-white rounded-lg text-sm font-semibold">Browse Applications</Link>} />
             ) : (
@@ -34,7 +46,7 @@ export default function MyOffers() {
                             </thead>
                             <tbody>
                                 {offers.map(o => {
-                                    const app = applications.find(a => a.id === o.applicationId);
+                                    const app = getLenderApplication(o.applicationId, lender.id);
                                     return (
                                         <tr key={o.id} className="border-b border-[#30363d] hover:bg-white/[0.02] transition-colors">
                                             <td className="py-3 px-4 font-mono text-xs text-slate-400">{o.id.slice(0, 10)}</td>
@@ -46,9 +58,16 @@ export default function MyOffers() {
                                             <td className="py-3 px-4"><StatusBadge status={o.status} size="sm" /></td>
                                             <td className="py-3 px-4 text-xs text-slate-500 whitespace-nowrap">{fmtDate(o.createdAt)}</td>
                                             <td className="py-3 px-4">
-                                                <Link to={`/lender/applications/${o.applicationId}`} className="text-emerald-400 hover:text-emerald-300 text-xs font-medium transition-colors">
-                                                    View App →
-                                                </Link>
+                                                <div className="flex items-center gap-3 whitespace-nowrap">
+                                                    <Link to={`/lender/applications/${o.applicationId}`} className="text-emerald-400 hover:text-emerald-300 text-xs font-medium transition-colors">
+                                                        View App →
+                                                    </Link>
+                                                    {o.status === 'PENDING' && (
+                                                        <button onClick={() => withdraw(o.applicationId, o.id)} className="text-red-400 hover:text-red-300 text-xs font-medium transition-colors">
+                                                            Withdraw
+                                                        </button>
+                                                    )}
+                                                </div>
                                             </td>
                                         </tr>
                                     );

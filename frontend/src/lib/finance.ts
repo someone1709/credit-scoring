@@ -1,0 +1,49 @@
+// Financial indicators from Master Brief §5.2, plus EMI maths for loan offers.
+
+export function dtiPercent(existingEmi: number, monthlyIncome: number): number {
+    return monthlyIncome > 0 ? (existingEmi / monthlyIncome) * 100 : 0;
+}
+
+export function expenseRatioPercent(monthlyExpenses: number, monthlyIncome: number): number {
+    return monthlyIncome > 0 ? (monthlyExpenses / monthlyIncome) * 100 : 0;
+}
+
+export function monthlySurplus(monthlyIncome: number, monthlyExpenses: number, existingEmi: number): number {
+    return monthlyIncome - monthlyExpenses - existingEmi;
+}
+
+/** Equated monthly instalment. A 0% rate is valid and simply divides the principal evenly. */
+export function calculateEmi(amount: number, annualRatePercent: number, tenureMonths: number): number {
+    if (amount <= 0 || tenureMonths <= 0) return 0;
+    const monthlyRate = annualRatePercent / 12 / 100;
+    if (monthlyRate === 0) return Math.round(amount / tenureMonths);
+    return Math.round((amount * monthlyRate) / (1 - Math.pow(1 + monthlyRate, -tenureMonths)));
+}
+
+export function totalRepayable(amount: number, annualRatePercent: number, tenureMonths: number): number {
+    return calculateEmi(amount, annualRatePercent, tenureMonths) * tenureMonths;
+}
+
+export interface RepaymentRow {
+    instalment: number;
+    emi: number;
+    principal: number;
+    interest: number;
+    balance: number;
+}
+
+/** Reducing-balance schedule. The final instalment absorbs rounding so the balance ends at exactly 0. */
+export function repaymentSchedule(amount: number, annualRatePercent: number, tenureMonths: number): RepaymentRow[] {
+    const emi = calculateEmi(amount, annualRatePercent, tenureMonths);
+    const monthlyRate = annualRatePercent / 12 / 100;
+    const rows: RepaymentRow[] = [];
+    let balance = amount;
+    for (let instalment = 1; instalment <= tenureMonths; instalment++) {
+        const interest = Math.round(balance * monthlyRate);
+        const isLast = instalment === tenureMonths;
+        const principal = isLast ? balance : Math.min(balance, emi - interest);
+        balance -= principal;
+        rows.push({ instalment, emi: principal + interest, principal, interest, balance });
+    }
+    return rows;
+}

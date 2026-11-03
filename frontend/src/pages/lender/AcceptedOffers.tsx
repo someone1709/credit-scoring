@@ -1,6 +1,6 @@
 import { Link } from 'react-router-dom';
-import { useRole } from '@/context/RoleContext';
-import { useApp } from '@/context/AppContext';
+import { useLender } from '@/context/useAuth';
+import { useApp } from '@/context/useApp';
 import { Card, EmptyState } from '@/components/shared/UI';
 import { DisbursementStepper } from '@/components/shared/Stepper';
 import { CheckSquare } from 'lucide-react';
@@ -8,8 +8,8 @@ import { CheckSquare } from 'lucide-react';
 function fmt(n: number) { return '₹' + n.toLocaleString('en-IN'); }
 
 export default function AcceptedOffers() {
-    const { lender } = useRole();
-    const { getOffersByLender, applications } = useApp();
+    const lender = useLender();
+    const { getOffersByLender, getLenderApplication } = useApp();
     const accepted = getOffersByLender(lender.id).filter(o => o.status === 'ACCEPTED');
 
     return (
@@ -26,7 +26,7 @@ export default function AcceptedOffers() {
             ) : (
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
                     {accepted.map(o => {
-                        const app = applications.find(a => a.id === o.applicationId);
+                        const app = getLenderApplication(o.applicationId, lender.id);
                         const steps = app?.disbursementSteps || [];
                         const pct = steps.length ? Math.round((steps.filter(s => s.status === 'completed').length / steps.length) * 100) : 0;
                         return (

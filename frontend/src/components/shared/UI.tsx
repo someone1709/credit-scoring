@@ -60,7 +60,7 @@ export function SectionHeader({ title, subtitle, action }: {
 export function StatCard({ label, value, sub, icon, color = 'emerald' }: {
     label: string;
     value: string | number;
-    sub?: string;
+    sub?: React.ReactNode;
     icon: React.ReactNode;
     color?: 'emerald' | 'blue' | 'amber' | 'red' | 'purple';
 }) {
@@ -95,9 +95,9 @@ export function StatCard({ label, value, sub, icon, color = 'emerald' }: {
 
 export function InfoRow({ label, value, mono = false }: { label: string; value: React.ReactNode; mono?: boolean }) {
     return (
-        <div className="flex justify-between items-center py-2 border-b border-[#30363d] last:border-0">
+        <div className="flex justify-between items-center gap-3 py-2 border-b border-[#30363d] last:border-0">
             <span className="text-slate-500 text-sm">{label}</span>
-            <span className={clsx('text-slate-200 text-sm font-medium', mono && 'font-mono')}>{value}</span>
+            <span className={clsx('text-slate-200 text-sm font-medium text-right', mono && 'font-mono')}>{value}</span>
         </div>
     );
 }
@@ -109,6 +109,16 @@ export function DemoDisclaimer({ className }: { className?: string }) {
             <p className="text-amber-400 text-xs">
                 <strong>Academic prototype.</strong> All data is synthetic. Scores and decisions are illustrative only and are NOT financial advice or lending decisions.
             </p>
+        </div>
+    );
+}
+
+/** Shown when a page's action fails, such as accepting an offer that has just expired. */
+export function ActionError({ message, className }: { message: string | null; className?: string }) {
+    if (!message) return null;
+    return (
+        <div role="alert" className={clsx('px-3 py-2 bg-red-500/10 border border-red-500/30 rounded-lg text-sm text-red-400', className)}>
+            {message}
         </div>
     );
 }

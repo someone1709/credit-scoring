@@ -10,6 +10,7 @@ import type {
     LoanApplicationFormData,
 } from '@/types';
 import { MOCK_APPLICATIONS } from '@/data/mockData';
+import { assessCredit } from '@/lib/assessment';
 
 const delay = (ms: number) => new Promise(res => setTimeout(res, ms));
 
@@ -31,20 +32,20 @@ export const api = {
     },
 
     // Credit Assessment
-    async runAssessment(_req: CreditAssessmentRequest): Promise<CreditAssessmentResponse> {
+    async runAssessment(req: CreditAssessmentRequest): Promise<CreditAssessmentResponse> {
         await delay(1200);
-        // Phase 1: returns mock — Phase 3 will call FastAPI
-        throw new Error('Not implemented in Phase 1');
+        // Rule-based until Phase 3 calls FastAPI.
+        return assessCredit(req, 'NOT_PROVIDED');
     },
 
     // Lender
-    async getLenderApplications(_lenderId: string): Promise<LoanApplication[]> {
+    async getLenderApplications(lenderId: string): Promise<LoanApplication[]> {
         await delay(300);
-        return MOCK_APPLICATIONS;
+        return MOCK_APPLICATIONS.filter(a => a.lenderDecisions.some(d => d.lenderId === lenderId));
     },
 
-    async getOffers(_lenderId: string): Promise<LoanOffer[]> {
+    async getOffers(lenderId: string): Promise<LoanOffer[]> {
         await delay(200);
-        return MOCK_APPLICATIONS.flatMap(a => a.offers.filter(o => o.lender_id === _lenderId));
+        return MOCK_APPLICATIONS.flatMap(a => a.offers.filter(o => o.lender_id === lenderId));
     },
 };

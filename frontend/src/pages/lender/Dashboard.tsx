@@ -1,11 +1,11 @@
 import { Link } from 'react-router-dom';
-import { useRole } from '@/context/RoleContext';
-import { useApp } from '@/context/AppContext';
+import { useLender } from '@/context/useAuth';
+import { useApp } from '@/context/useApp';
 import { StatCard, Card, DemoDisclaimer } from '@/components/shared/UI';
 import { StatusBadge } from '@/components/shared/StatusBadge';
 
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
-import { FileText, Clock, Check, X, Gift, ArrowRight } from 'lucide-react';
+import { FileText, Clock, Check, X, Gift, ArrowRight, Wallet } from 'lucide-react';
 
 function fmt(n: number) { return '₹' + n.toLocaleString('en-IN'); }
 function fmtDate(iso: string) { return new Date(iso).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }); }
@@ -13,7 +13,7 @@ function fmtDate(iso: string) { return new Date(iso).toLocaleDateString('en-IN',
 const RISK_COLORS: Record<string, string> = { LOW: '#10b981', MEDIUM: '#f59e0b', HIGH: '#ef4444' };
 
 export default function LenderDashboard() {
-    const { lender } = useRole();
+    const lender = useLender();
     const { getApplicationsByLender, getOffersByLender } = useApp();
     const apps = getApplicationsByLender(lender.id);
     const offers = getOffersByLender(lender.id);
@@ -22,12 +22,18 @@ export default function LenderDashboard() {
     const underReview = myDecisions.filter(d => d!.status === 'UNDER_REVIEW').length;
     const offersMade = myDecisions.filter(d => d!.status === 'OFFER_MADE').length;
     const rejected = myDecisions.filter(d => d!.status === 'REJECTED').length;
-    const accepted = offers.filter(o => o.status === 'ACCEPTED').length;
+    const infoRequested = myDecisions.filter(d => d!.status === 'INFO_REQUESTED').length;
+    const acceptedOffers = offers.filter(o => o.status === 'ACCEPTED');
+    const accepted = acceptedOffers.length;
+    const disbursedTotal = acceptedOffers
+        .filter(o => apps.find(a => a.id === o.applicationId)?.status === 'DISBURSED')
+        .reduce((sum, o) => sum + o.amount, 0);
 
     // Chart data
     const statusData = [
         { name: 'Pending', value: myDecisions.filter(d => d!.status === 'PENDING').length, fill: '#64748b' },
         { name: 'Reviewing', value: underReview, fill: '#f59e0b' },
+        { name: 'Info Requested', value: infoRequested, fill: '#3b82f6' },
         { name: 'Offers Made', value: offersMade, fill: '#10b981' },
         { name: 'Rejected', value: rejected, fill: '#ef4444' },
     ];
@@ -40,7 +46,9 @@ export default function LenderDashboard() {
         return acc;
     }, {} as Record<string, number>);
 
-    const riskPieData = Object.entries(riskDist).map(([name, value]) => ({ name, value, fill: RISK_COLORS[name] }));
+    const riskPieData = ['LOW', 'MEDIUM', 'HIGH']
+        .filter(name => riskDist[name])
+        .map(name => ({ name, value: riskDist[name], fill: RISK_COLORS[name] }));
 
     const recentApps = [...apps].sort((a, b) => new Date(b.submittedAt).getTime() - new Date(a.submittedAt).getTime()).slice(0, 4);
 
@@ -54,12 +62,13 @@ export default function LenderDashboard() {
             <DemoDisclaimer />
 
             {/* Stats */}
-            <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-6 gap-4">
                 <StatCard label="Total Applications" value={apps.length} icon={<FileText size={20} />} color="blue" />
                 <StatCard label="Under Review" value={underReview} icon={<Clock size={20} />} color="amber" />
                 <StatCard label="Offers Made" value={offersMade} icon={<Gift size={20} />} color="emerald" />
                 <StatCard label="Rejected" value={rejected} icon={<X size={20} />} color="red" />
                 <StatCard label="Accepted Offers" value={accepted} icon={<Check size={20} />} color="emerald" />
+                <StatCard label="Disbursed" value={disbursedTotal > 0 ? fmt(disbursedTotal) : '—'} sub="Simulated" icon={<Wallet size={20} />} color="purple" />
             </div>
 
             {/* Charts + Recent */}
@@ -70,8 +79,9 @@ export default function LenderDashboard() {
                     <ResponsiveContainer width="100%" height={180}>
                         <BarChart data={statusData} barSize={32}>
                             <XAxis dataKey="name" tick={{ fill: '#94a3b8', fontSize: 11 }} axisLine={false} tickLine={false} />
-                            <YAxis tick={{ fill: '#64748b', fontSize: 11 }} axisLine={false} tickLine={false} allowDecimals={false} />
+                            <YAxis width={28} tick={{ fill: '#64748b', fontSize: 11 }} axisLine={false} tickLine={false} allowDecimals={false} />
                             <Tooltip
+                                cursor={{ fill: 'rgba(255,255,255,0.04)' }}
                                 contentStyle={{ background: '#1c2333', border: '1px solid #30363d', borderRadius: 8 }}
                                 labelStyle={{ color: '#cbd5e1' }}
                                 itemStyle={{ color: '#94a3b8' }}
@@ -155,7 +165,7 @@ export default function LenderDashboard() {
                                     </tr>
                                 );
                             })}
-                            {recentApps.length === 0 && <tr><td colSpan={8} className="py-8 text-center text-slate-500 text-sm">No applications assigned yet.</td></tr>}
+                            {recentApps.length === 0 && <tr><td colSpan={8} className="py-8 text-center text-slate-500 text-sm">No applications have been shared with you yet.</td></tr>}
                         </tbody>
                     </table>
                 </div>

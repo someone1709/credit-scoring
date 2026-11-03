@@ -1,16 +1,18 @@
 import { Link } from 'react-router-dom';
-import { useRole } from '@/context/RoleContext';
-import { useApp } from '@/context/AppContext';
+import { useBeneficiary } from '@/context/useAuth';
+import { useApp } from '@/context/useApp';
 import { Card, EmptyState } from '@/components/shared/UI';
 import { DisbursementStepper } from '@/components/shared/Stepper';
 import { StatusBadge } from '@/components/shared/StatusBadge';
+import { getAcceptedOffer } from '@/lib/workflow';
 import { Wallet } from 'lucide-react';
 
 export default function DisbursementTracking() {
-    const { beneficiary } = useRole();
+    const beneficiary = useBeneficiary();
     const { getApplicationsByBeneficiary } = useApp();
     const apps = getApplicationsByBeneficiary(beneficiary.id);
-    const disbursedApps = apps.filter(a => a.disbursementSteps.length > 0);
+    // Disbursement only starts once an offer has been accepted.
+    const disbursedApps = apps.filter(a => getAcceptedOffer(a) && a.disbursementSteps.length > 0);
 
     return (
         <div className="space-y-6">
@@ -32,7 +34,7 @@ export default function DisbursementTracking() {
             ) : (
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
                     {disbursedApps.map(app => {
-                        const acceptedOffer = app.offers.find(o => o.status === 'ACCEPTED');
+                        const acceptedOffer = getAcceptedOffer(app);
                         const completed = app.disbursementSteps.filter(s => s.status === 'completed').length;
                         const pct = Math.round((completed / app.disbursementSteps.length) * 100);
                         return (

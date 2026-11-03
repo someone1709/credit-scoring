@@ -1,12 +1,13 @@
-import { useNavigate } from 'react-router-dom';
-import { useRole } from '@/context/RoleContext';
-import { TrendingUp, Shield, Users, BarChart3, ChevronRight, Star } from 'lucide-react';
+import { Link, useNavigate } from 'react-router-dom';
+import { homeForRole, useAuth } from '@/context/useAuth';
+import { MOCK_APPLICATIONS, MOCK_LENDERS } from '@/data/mockData';
+import { TrendingUp, Shield, Users, BarChart3, ChevronRight, LayoutDashboard, Star } from 'lucide-react';
 
 const features = [
     {
         icon: BarChart3,
         title: 'Alternative Credit Scoring',
-        desc: 'Rule-based AI assessment using income, DTI, expense ratios, and repayment history — no CIBIL score required.',
+        desc: 'A rule-based assessment using income, DTI, expense ratios and repayment history. No CIBIL score required.',
     },
     {
         icon: Users,
@@ -20,20 +21,25 @@ const features = [
     },
 ];
 
+// Counted from the demo data, so the page can't claim more than the prototype holds.
+const simulatedDisbursed = MOCK_APPLICATIONS
+    .filter(app => app.status === 'DISBURSED')
+    .flatMap(app => app.offers.filter(offer => offer.status === 'ACCEPTED'))
+    .reduce((sum, offer) => sum + offer.amount, 0);
+
 const stats = [
-    { value: '₹2L+', label: 'Simulated Loan Volume' },
-    { value: '3+', label: 'Partner Lenders' },
-    { value: '100%', label: 'Explainable AI' },
+    { value: `₹${(simulatedDisbursed / 100000).toFixed(1)}L`, label: 'Simulated Disbursed' },
+    { value: String(MOCK_LENDERS.length), label: 'Demo Lenders' },
+    { value: 'Every', label: 'Score Explained' },
     { value: '0', label: 'CIBIL Required' },
 ];
 
 export default function LandingPage() {
     const navigate = useNavigate();
-    const { switchRole } = useRole();
+    const { user } = useAuth();
 
     const enter = (role: 'beneficiary' | 'lender') => {
-        switchRole(role);
-        navigate(`/${role}/dashboard`);
+        navigate(user?.role === role ? homeForRole(role) : `/login?role=${role}`);
     };
 
     return (
@@ -46,19 +52,31 @@ export default function LandingPage() {
 
             {/* Topbar */}
             <header className="relative border-b border-[#30363d] bg-[#161b22]/80 backdrop-blur-sm">
-                <div className="max-w-6xl mx-auto px-6 py-4 flex items-center justify-between">
+                <div className="max-w-6xl mx-auto px-4 sm:px-6 py-4 flex items-center justify-between gap-3">
                     <div className="flex items-center gap-3">
                         <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-emerald-500 to-blue-600 flex items-center justify-center">
                             <TrendingUp size={18} className="text-white" />
                         </div>
                         <div>
                             <p className="text-white font-bold text-lg leading-tight">BeneScore</p>
-                            <p className="text-slate-500 text-xs">AI-Powered Digital Lending</p>
+                            <p className="text-slate-500 text-xs hidden sm:block">AI-Powered Digital Lending</p>
                         </div>
                     </div>
-                    <div className="flex items-center gap-2 text-xs text-amber-400 bg-amber-500/10 border border-amber-500/20 px-3 py-1.5 rounded-full">
-                        <Star size={11} />
-                        Academic Prototype · CSE Minor Project
+                    <div className="flex items-center gap-3">
+                        <div className="hidden md:flex items-center gap-2 text-xs text-amber-400 bg-amber-500/10 border border-amber-500/20 px-3 py-1.5 rounded-full">
+                            <Star size={11} />
+                            Academic Prototype · CSE Minor Project
+                        </div>
+                        {user ? (
+                            <Link to={homeForRole(user.role)} className="flex items-center gap-2 px-4 py-2 bg-emerald-500 hover:bg-emerald-600 text-white rounded-lg text-sm font-semibold transition-colors whitespace-nowrap">
+                                <LayoutDashboard size={15} /> Dashboard
+                            </Link>
+                        ) : (
+                            <>
+                                <Link to="/login" className="px-3 py-2 text-sm font-medium text-slate-300 hover:text-white transition-colors whitespace-nowrap">Sign In</Link>
+                                <Link to="/register" className="px-4 py-2 bg-emerald-500 hover:bg-emerald-600 text-white rounded-lg text-sm font-semibold transition-colors whitespace-nowrap">Create Account</Link>
+                            </>
+                        )}
                     </div>
                 </div>
             </header>
@@ -130,7 +148,7 @@ export default function LandingPage() {
                 <div className="p-5 bg-amber-500/5 border border-amber-500/20 rounded-xl text-center">
                     <p className="text-amber-400 text-sm font-semibold mb-1">Academic Prototype Notice</p>
                     <p className="text-slate-500 text-xs leading-relaxed">
-                        This is a Phase 1 frontend prototype. All data is synthetic. No real loans are issued, no real money is transferred, and no real financial decisions are made. All AI scores are rule-based and illustrative only. Not for production use.
+                        This is a frontend prototype. All data is synthetic. No real loans are issued, no real money is transferred, and no real financial decisions are made. All scores are rule-based and illustrative only. Not for production use.
                     </p>
                 </div>
             </section>

@@ -1,10 +1,11 @@
 import { useState } from 'react';
-import { Link } from 'react-router-dom';
-import { useRole } from '@/context/RoleContext';
-import { useApp } from '@/context/AppContext';
+import { Link, useSearchParams } from 'react-router-dom';
+import { useLender } from '@/context/useAuth';
+import { useApp } from '@/context/useApp';
 import { Card, EmptyState } from '@/components/shared/UI';
 import { StatusBadge } from '@/components/shared/StatusBadge';
 import { FileText, Search, ChevronUp, ChevronDown } from 'lucide-react';
+import { getAcceptedOffer, isClosedToDecisions } from '@/lib/workflow';
 import type { RiskCategory } from '@/types';
 
 function fmt(n: number) { return '₹' + n.toLocaleString('en-IN'); }
@@ -13,11 +14,14 @@ function fmtDate(iso: string) { return new Date(iso).toLocaleDateString('en-IN',
 type SortKey = 'submittedAt' | 'loan_amount' | 'monthly_income';
 
 export default function LenderApplications() {
-    const { lender } = useRole();
+    const lender = useLender();
     const { getApplicationsByLender } = useApp();
     const apps = getApplicationsByLender(lender.id);
 
-    const [search, setSearch] = useState('');
+    // The search lives in the URL, so the search box in the top bar drives this list too.
+    const [params, setParams] = useSearchParams();
+    const search = params.get('q') ?? '';
+    const setSearch = (value: string) => setParams(value ? { q: value } : {}, { replace: true });
     const [riskFilter, setRiskFilter] = useState<RiskCategory | ''>('');
     const [decisionFilter, setDecisionFilter] = useState('');
     const [sortKey, setSortKey] = useState<SortKey>('submittedAt');
@@ -57,7 +61,7 @@ export default function LenderApplications() {
         <div className="space-y-5">
             <div>
                 <h1 className="text-2xl font-bold text-white">Loan Applications</h1>
-                <p className="text-slate-500 mt-1 text-sm">Review and manage applications assigned to {lender.name}.</p>
+                <p className="text-slate-500 mt-1 text-sm">Review applications beneficiaries shared with {lender.name}.</p>
             </div>
 
             {/* Filters */}
@@ -68,12 +72,14 @@ export default function LenderApplications() {
                         value={search}
                         onChange={e => setSearch(e.target.value)}
                         placeholder="Search applicant or ID..."
+                        aria-label="Search applicant or ID"
                         className="pl-9 pr-4 py-2 bg-[#161b22] border border-[#30363d] rounded-lg text-sm text-slate-300 placeholder-slate-600 focus:outline-none focus:border-emerald-500/50 transition-colors w-52"
                     />
                 </div>
                 <select
                     value={riskFilter}
                     onChange={e => setRiskFilter(e.target.value as RiskCategory | '')}
+                    aria-label="Filter by risk level"
                     className="px-3 py-2 bg-[#161b22] border border-[#30363d] rounded-lg text-sm text-slate-400 focus:outline-none"
                 >
                     <option value="">All Risk Levels</option>
@@ -84,6 +90,7 @@ export default function LenderApplications() {
                 <select
                     value={decisionFilter}
                     onChange={e => setDecisionFilter(e.target.value)}
+                    aria-label="Filter by your decision"
                     className="px-3 py-2 bg-[#161b22] border border-[#30363d] rounded-lg text-sm text-slate-400 focus:outline-none"
                 >
                     <option value="">All Decisions</option>
@@ -132,6 +139,8 @@ export default function LenderApplications() {
                                 {filtered.map(app => {
                                     const myDec = app.lenderDecisions.find(d => d.lenderId === lender.id);
                                     const ass = app.assessment;
+                                    // Says the application closed, never who won it.
+                                    const closedToMe = isClosedToDecisions(app) && getAcceptedOffer(app)?.lender_id !== lender.id;
                                     return (
                                         <tr key={app.id} className="border-b border-[#30363d] hover:bg-white/[0.02] transition-colors">
                                             <td className="py-3 px-4 font-mono text-xs text-slate-400">#{app.id}</td>
@@ -142,7 +151,12 @@ export default function LenderApplications() {
                                                 {ass ? <StatusBadge status={ass.risk_category} size="sm" /> : <span className="text-slate-600 text-xs">—</span>}
                                             </td>
                                             <td className="py-3 px-4 text-sm text-slate-300">{ass ? ass.composite_score : '—'}</td>
-                                            <td className="py-3 px-4"><StatusBadge status={myDec?.status || 'PENDING'} size="sm" /></td>
+                                            <td className="py-3 px-4">
+                                                <div className="flex flex-col items-start gap-1">
+                                                    <StatusBadge status={myDec?.status || 'PENDING'} size="sm" />
+                                                    {closedToMe && <span className="text-xs text-slate-500">Closed</span>}
+                                                </div>
+                                            </td>
                                             <td className="py-3 px-4 text-xs text-slate-500 whitespace-nowrap">{fmtDate(app.submittedAt)}</td>
                                             <td className="py-3 px-4">
                                                 <Link to={`/lender/applications/${app.id}`} className="px-3 py-1.5 bg-emerald-500/15 hover:bg-emerald-500/25 border border-emerald-500/30 text-emerald-400 rounded-lg text-xs font-medium transition-colors whitespace-nowrap">

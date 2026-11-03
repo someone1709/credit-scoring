@@ -1,6 +1,6 @@
-import { Link } from 'react-router-dom';
-import { useRole } from '@/context/RoleContext';
-import { useApp } from '@/context/AppContext';
+import { Link, useSearchParams } from 'react-router-dom';
+import { useBeneficiary } from '@/context/useAuth';
+import { useApp } from '@/context/useApp';
 import { Card, EmptyState, SectionHeader } from '@/components/shared/UI';
 import { StatusBadge } from '@/components/shared/StatusBadge';
 import { FileText, Plus } from 'lucide-react';
@@ -11,9 +11,14 @@ function formatDate(iso: string) {
 }
 
 export default function MyApplications() {
-    const { beneficiary } = useRole();
+    const beneficiary = useBeneficiary();
     const { getApplicationsByBeneficiary } = useApp();
-    const apps = getApplicationsByBeneficiary(beneficiary.id);
+    const [params] = useSearchParams();
+    const query = (params.get('q') ?? '').trim().toLowerCase();
+    const allApps = getApplicationsByBeneficiary(beneficiary.id);
+    const apps = query
+        ? allApps.filter(a => a.id.toLowerCase().includes(query) || a.loan_purpose.toLowerCase().includes(query))
+        : allApps;
 
     return (
         <div className="space-y-6">
@@ -28,7 +33,14 @@ export default function MyApplications() {
             />
 
             <Card>
-                {apps.length === 0 ? (
+                {query && (
+                    <p className="text-sm text-slate-400 mb-3">
+                        Showing results for “{params.get('q')}”. <Link to="/beneficiary/applications" className="text-emerald-400 hover:underline">Clear</Link>
+                    </p>
+                )}
+                {query && apps.length === 0 ? (
+                    <EmptyState icon={<FileText size={40} />} title="No matching applications" description="Try an application ID or a loan purpose." />
+                ) : apps.length === 0 ? (
                     <EmptyState
                         icon={<FileText size={40} />}
                         title="No applications yet"
@@ -55,6 +67,8 @@ export default function MyApplications() {
                                     const offersMade = decisions.filter(d => d.status === 'OFFER_MADE').length;
                                     const rejected = decisions.filter(d => d.status === 'REJECTED').length;
                                     const reviewing = decisions.filter(d => d.status === 'UNDER_REVIEW').length;
+                                    const infoRequested = decisions.filter(d => d.status === 'INFO_REQUESTED').length;
+                                    const waiting = decisions.filter(d => d.status === 'PENDING').length;
                                     return (
                                         <tr key={app.id} className="border-b border-[#30363d] hover:bg-white/[0.02] transition-colors">
                                             <td className="py-4 pr-4 font-mono text-sm text-slate-300">#{app.id}</td>
@@ -67,7 +81,9 @@ export default function MyApplications() {
                                                 <div className="flex flex-col gap-0.5">
                                                     {offersMade > 0 && <span className="text-xs text-emerald-400">{offersMade} offer{offersMade > 1 ? 's' : ''}</span>}
                                                     {reviewing > 0 && <span className="text-xs text-amber-400">{reviewing} reviewing</span>}
+                                                    {infoRequested > 0 && <span className="text-xs text-amber-400">{infoRequested} asked for info</span>}
                                                     {rejected > 0 && <span className="text-xs text-red-400">{rejected} rejected</span>}
+                                                    {waiting > 0 && <span className="text-xs text-slate-500">{waiting} not started</span>}
                                                     {decisions.length === 0 && <span className="text-xs text-slate-600">—</span>}
                                                 </div>
                                             </td>

@@ -1,25 +1,23 @@
 import { useParams, Link } from 'react-router-dom';
-import { useApp } from '@/context/AppContext';
+import { useApp } from '@/context/useApp';
+import { useBeneficiary } from '@/context/useAuth';
 import { Card, InfoRow, DemoDisclaimer } from '@/components/shared/UI';
 import { StatusBadge } from '@/components/shared/StatusBadge';
 import { ScoreGauge } from '@/components/shared/ScoreGauge';
 import { ApplicationWorkflowStepper, DisbursementStepper } from '@/components/shared/Stepper';
-import { ArrowLeft } from 'lucide-react';
+import { canUploadDocuments, workflowStep } from '@/lib/workflow';
+import { ArrowLeft, Info } from 'lucide-react';
 
 function formatCurrency(n: number) { return '₹' + n.toLocaleString('en-IN'); }
 function formatDate(iso: string) {
     return new Date(iso).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
 }
 
-const STATUS_TO_STEP: Record<string, number> = {
-    SUBMITTED: 0, DOCUMENTS_REQUIRED: 1, UNDER_REVIEW: 3,
-    OFFERS_AVAILABLE: 3, OFFER_ACCEPTED: 4, REJECTED: 4, DISBURSED: 4,
-};
-
 export default function ApplicationDetail() {
     const { id } = useParams<{ id: string }>();
-    const { applications } = useApp();
-    const app = applications.find(a => a.id === id);
+    const beneficiary = useBeneficiary();
+    const { getBeneficiaryApplication } = useApp();
+    const app = id ? getBeneficiaryApplication(id, beneficiary.id) : undefined;
 
     if (!app) return (
         <div className="text-center py-16">
@@ -29,11 +27,11 @@ export default function ApplicationDetail() {
     );
 
     const assessment = app.assessment;
-    const currentStep = STATUS_TO_STEP[app.status] ?? 0;
+    const infoRequests = app.lenderDecisions.filter(d => d.status === 'INFO_REQUESTED');
 
     return (
         <div className="space-y-6 max-w-4xl">
-            <div className="flex items-center gap-3">
+            <div className="flex flex-wrap items-center gap-3">
                 <Link to="/beneficiary/applications" className="text-slate-400 hover:text-white transition-colors">
                     <ArrowLeft size={20} />
                 </Link>
@@ -49,11 +47,28 @@ export default function ApplicationDetail() {
             {/* Workflow stepper */}
             <Card>
                 <h2 className="text-sm font-semibold text-slate-400 uppercase tracking-wide mb-5">Application Progress</h2>
-                <ApplicationWorkflowStepper currentStep={currentStep} />
+                <ApplicationWorkflowStepper currentStep={workflowStep(app.status)} dates={{ 0: formatDate(app.submittedAt) }} rejected={app.status === 'REJECTED'} />
             </Card>
 
+            {/* Information requests */}
+            {infoRequests.length > 0 && (
+                <Card className="border-amber-500/30">
+                    <h2 className="text-base font-bold text-white mb-3 flex items-center gap-2"><Info size={16} className="text-amber-400" /> Information Requested</h2>
+                    <ul className="space-y-2">
+                        {infoRequests.map(d => (
+                            <li key={d.lenderId} className="text-sm text-slate-300"><strong className="text-white">{d.lenderName}:</strong> {d.note}</li>
+                        ))}
+                    </ul>
+                    {canUploadDocuments(app) && (
+                        <Link to="/beneficiary/documents" className="inline-block mt-4 px-4 py-2 bg-emerald-500 hover:bg-emerald-600 text-white rounded-lg text-sm font-semibold transition-colors">
+                            Upload Documents
+                        </Link>
+                    )}
+                </Card>
+            )}
+
             {/* Details + Assessment */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 items-start">
                 <Card>
                     <h2 className="text-base font-bold text-white mb-4">Loan Details</h2>
                     <InfoRow label="Loan Amount" value={formatCurrency(app.loan_amount)} />
@@ -70,19 +85,19 @@ export default function ApplicationDetail() {
                     <Card>
                         <h2 className="text-base font-bold text-white mb-4">Credit Assessment</h2>
                         <div className="flex justify-center gap-6 mb-4">
-                            <ScoreGauge score={assessment.risk_score} label="Risk Score" sublabel="Higher = more risk" />
-                            <ScoreGauge score={assessment.composite_score} label="Composite Score" sublabel="Higher = better profile" />
+                            <ScoreGauge kind="risk" score={assessment.risk_score} label="Risk Score" sublabel="Higher = more risk" />
+                            <ScoreGauge kind="composite" score={assessment.composite_score} label="Composite Score" sublabel="Higher = better profile" />
                         </div>
                         <InfoRow label="Risk Category" value={<StatusBadge status={assessment.risk_category} size="sm" />} />
                         <InfoRow label="Income Bracket" value={assessment.income_bracket.replace('_', ' ')} />
                         <InfoRow label="Segment" value={assessment.segment.replace(/_/g, ' ')} />
-                        {assessment.probability_of_default !== null && (
-                            <InfoRow label="Prob. of Default" value={`${(assessment.probability_of_default * 100).toFixed(1)}%`} />
-                        )}
-                        <InfoRow label="Thin-file" value={assessment.is_thin_file ? 'Yes — first-time borrower' : 'No'} />
+                        <InfoRow label="Prob. of Default" value={assessment.probability_of_default !== null ? `${(assessment.probability_of_default * 100).toFixed(1)}%` : 'Unavailable'} />
+                        <InfoRow label="Model Confidence" value={assessment.model_confidence !== null ? `${(assessment.model_confidence * 100).toFixed(1)}%` : 'Unavailable'} />
+                        <InfoRow label="Thin-file" value={assessment.is_thin_file ? 'Yes, no repayment history on record' : 'No'} />
+                        <InfoRow label="Documents" value={<StatusBadge status={assessment.verification_status} size="sm" />} />
                         <InfoRow label="Method" value={assessment.explanation_method} />
                         <div className="mt-3 p-3 bg-[#0d1117] rounded-lg border border-[#30363d]">
-                            <p className="text-xs text-slate-500 font-medium mb-2">AI Explanations ({assessment.explanation_method})</p>
+                            <p className="text-xs text-slate-500 font-medium mb-2">Explanations ({assessment.explanation_method})</p>
                             <ul className="space-y-1">
                                 {assessment.explanations.map((e, i) => (
                                     <li key={i} className="text-xs text-slate-400 flex items-start gap-1.5">
@@ -91,6 +106,7 @@ export default function ApplicationDetail() {
                                 ))}
                             </ul>
                         </div>
+                        <p className="text-xs text-slate-600 mt-3">Illustrative rule-based result, not a trained model and not a lending decision. Lenders make their own decisions.</p>
                     </Card>
                 )}
             </div>

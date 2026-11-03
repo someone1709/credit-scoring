@@ -1,331 +1,265 @@
-import React, {
-    createContext,
-    useContext,
-    useState,
-    useCallback,
-} from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import type {
-    LoanApplication,
-    LoanOffer,
-    Notification,
-    LenderDecision,
-    LenderDecisionStatus,
-    OfferStatus,
-    Document,
-    VerificationStatus,
+    BeneficiaryProfile,
     CreateOfferFormData,
+    LenderProfile,
+    LoanApplication,
     LoanApplicationFormData,
-    ApplicationStatus,
+    Notification,
 } from '@/types';
-import {
-    MOCK_APPLICATIONS,
-    MOCK_NOTIFICATIONS,
-    MOCK_OFFERS,
-    MOCK_LENDERS,
-} from '@/data/mockData';
+import { MOCK_APPLICATIONS, MOCK_NOTIFICATIONS, blankDocuments } from '@/data/mockData';
+import { assessCredit } from '@/lib/assessment';
+import { readJson, removeKey, writeJson } from '@/lib/storage';
+import * as workflow from '@/lib/workflow';
+import type { LenderAction, NoticeDraft, TransitionResult } from '@/lib/workflow';
+import { AppContext } from './useApp';
 
-interface AppContextValue {
-    applications: LoanApplication[];
-    notifications: Notification[];
+const APPLICATIONS_KEY = 'benescore.applications.v2';
+const NOTIFICATIONS_KEY = 'benescore.notifications.v2';
+const DOCUMENT_CHECK_DELAY_MS = 1500;
 
-    // Beneficiary actions
-    submitApplication: (beneficiaryId: string, beneficiaryName: string, data: LoanApplicationFormData) => LoanApplication;
-    acceptOffer: (offerId: string, applicationId: string) => void;
-    declineOffer: (offerId: string) => void;
-    uploadDocument: (appId: string, docId: string, filename: string) => void;
+let noticeCounter = 0;
 
-    // Lender actions
-    updateLenderDecision: (applicationId: string, lenderId: string, lenderName: string, status: LenderDecisionStatus, note?: string) => void;
-    createOffer: (applicationId: string, lenderId: string, data: CreateOfferFormData) => void;
-
-    // Notifications
-    markNotificationRead: (id: string) => void;
-    markAllNotificationsRead: (userId: string) => void;
-
-    // Derived
-    getApplicationsByBeneficiary: (beneficiaryId: string) => LoanApplication[];
-    getApplicationsByLender: (lenderId: string) => LoanApplication[];
-    getOffersByLender: (lenderId: string) => LoanOffer[];
-    getNotificationsByUser: (userId: string) => Notification[];
+function toNotifications(notices: NoticeDraft[], now: Date): Notification[] {
+    return notices.map(notice => ({
+        ...notice,
+        id: `NOTIF${now.getTime()}${noticeCounter++}`,
+        read: false,
+        createdAt: now.toISOString(),
+    }));
 }
 
-const AppContext = createContext<AppContextValue | null>(null);
+function uniqueId(prefix: string, taken: Set<string>): string {
+    let id: string;
+    do {
+        id = `${prefix}${Math.floor(1000 + Math.random() * 9000)}`;
+    } while (taken.has(id));
+    return id;
+}
 
-function generateAssessment(data: LoanApplicationFormData, beneficiaryId: string) {
-    const dti = (data.existing_emi / data.monthly_income) * 100;
-    const eir = (data.monthly_expenses / data.monthly_income) * 100;
-    const surplus = data.monthly_income - data.monthly_expenses - data.existing_emi;
-    const isThinFile = data.repayment_history === 'none';
-
-    let riskScore = 30;
-    if (dti > 40) riskScore += 25;
-    else if (dti > 25) riskScore += 15;
-    else if (dti > 10) riskScore += 8;
-
-    if (eir > 70) riskScore += 20;
-    else if (eir > 50) riskScore += 10;
-    else if (eir > 35) riskScore += 5;
-
-    if (data.repayment_history === 'poor') riskScore += 20;
-    else if (data.repayment_history === 'average') riskScore += 8;
-    else if (data.repayment_history === 'none') riskScore += 5;
-    else if (data.repayment_history === 'good') riskScore -= 5;
-
-    if (surplus < 2000) riskScore += 10;
-    else if (surplus > 10000) riskScore -= 5;
-
-    riskScore = Math.max(5, Math.min(95, riskScore));
-    const compositeScore = Math.max(5, Math.min(95, 100 - riskScore + (Math.random() * 4 - 2)));
-    const pod = riskScore / 100 - 0.05 + (Math.random() * 0.05);
-
-    const riskCategory = riskScore <= 30 ? 'LOW' : riskScore <= 60 ? 'MEDIUM' : 'HIGH';
-    const incomeBracket =
-        data.monthly_income >= 50000 ? 'HIGH_INCOME' :
-            data.monthly_income >= 25000 ? 'MID_INCOME' : 'LOW_INCOME';
-
-    let segment: LoanApplication['assessment'] extends infer T ? T extends null ? never : T extends { segment: infer S } ? S : never : never = 'STANDARD';
-    if (compositeScore >= 75 && incomeBracket === 'HIGH_INCOME') segment = 'PRIME';
-    else if (compositeScore >= 70) segment = 'STANDARD_PLUS';
-    else if (compositeScore >= 55 && incomeBracket === 'LOW_INCOME') segment = 'LOW_INCOME_PRIME';
-    else if (compositeScore >= 45) segment = 'STANDARD';
-    else if (compositeScore >= 30) segment = 'SUBPRIME';
-    else segment = 'HIGH_RISK';
-
-    const explanations: string[] = [
-        `Monthly income of ₹${data.monthly_income.toLocaleString('en-IN')} is available for assessment.`,
-        `Debt-to-income ratio is ${dti.toFixed(1)}%.`,
-        `Expense-to-income ratio is ${eir.toFixed(1)}%.`,
-        `Monthly surplus after expenses and EMI is approximately ₹${surplus.toLocaleString('en-IN')}.`,
-    ];
-    if (isThinFile) {
-        explanations.push('No repayment history on record — applicant may be a first-time borrower. No history is not equivalent to poor repayment behaviour.');
-    } else {
-        explanations.push(`Repayment history is reported as ${data.repayment_history}.`);
+/** Saved data, with any offer whose validity has lapsed marked as expired. */
+function loadInitialState(): { applications: LoanApplication[]; notifications: Notification[] } {
+    const now = new Date();
+    const notices: NoticeDraft[] = [];
+    const applications = readJson<LoanApplication[]>(APPLICATIONS_KEY, MOCK_APPLICATIONS).map(app => {
+        const result = workflow.expireOffers(app, now);
+        if (!result) return app;
+        notices.push(...result.notices);
+        return result.app;
+    });
+    const notifications = [...toNotifications(notices, now), ...readJson<Notification[]>(NOTIFICATIONS_KEY, MOCK_NOTIFICATIONS)];
+    // Save straight away, so an expiry is only announced once and every tab agrees on it.
+    if (notices.length > 0) {
+        writeJson(APPLICATIONS_KEY, applications);
+        writeJson(NOTIFICATIONS_KEY, notifications);
     }
-
-    return {
-        beneficiary_id: beneficiaryId,
-        risk_score: Math.round(riskScore),
-        risk_category: riskCategory as 'LOW' | 'MEDIUM' | 'HIGH',
-        probability_of_default: parseFloat(Math.max(0.02, Math.min(0.95, pod)).toFixed(2)),
-        model_confidence: null,
-        income_bracket: incomeBracket as 'LOW_INCOME' | 'MID_INCOME' | 'HIGH_INCOME',
-        composite_score: Math.round(compositeScore),
-        segment: segment as LoanApplication['assessment'] extends infer T ? T extends null ? never : T extends { segment: infer S } ? S : never : never,
-        is_thin_file: isThinFile,
-        explanations,
-        explanation_method: 'RULE_BASED' as const,
-        verification_status: 'DEMO_UNVERIFIED' as const,
-    };
+    return { applications, notifications };
 }
 
 export function AppProvider({ children }: { children: React.ReactNode }) {
-    const [applications, setApplications] = useState<LoanApplication[]>(MOCK_APPLICATIONS);
-    const [notifications, setNotifications] = useState<Notification[]>(MOCK_NOTIFICATIONS);
+    const [state, setState] = useState(loadInitialState);
+    const { applications, notifications } = state;
 
-    const submitApplication = useCallback((beneficiaryId: string, beneficiaryName: string, data: LoanApplicationFormData): LoanApplication => {
-        const id = `LA${Date.now().toString().slice(-4)}`;
-        const assessment = generateAssessment(data, beneficiaryId);
+    // Transitions read the latest state here, because they can throw and must not run inside a state updater.
+    const stateRef = useRef(state);
 
-        const defaultDocs: Document[] = [
-            { id: `${id}-DOC1`, applicationId: id, beneficiaryId, type: 'AADHAAR_CARD', label: 'Aadhaar Card', filename: null, uploadedAt: null, verification_status: 'NOT_PROVIDED', checkNote: null },
-            { id: `${id}-DOC2`, applicationId: id, beneficiaryId, type: 'PAN_CARD', label: 'PAN Card', filename: null, uploadedAt: null, verification_status: 'NOT_PROVIDED', checkNote: null },
-            { id: `${id}-DOC3`, applicationId: id, beneficiaryId, type: 'INCOME_PROOF', label: 'Income Proof', filename: null, uploadedAt: null, verification_status: 'NOT_PROVIDED', checkNote: null },
-            { id: `${id}-DOC4`, applicationId: id, beneficiaryId, type: 'BANK_STATEMENT', label: 'Bank Statement', filename: null, uploadedAt: null, verification_status: 'NOT_PROVIDED', checkNote: null },
-        ];
+    const commit = useCallback((next: typeof state) => {
+        stateRef.current = next;
+        setState(next);
+        writeJson(APPLICATIONS_KEY, next.applications);
+        writeJson(NOTIFICATIONS_KEY, next.notifications);
+    }, []);
 
-        const defaultDecisions: LenderDecision[] = MOCK_LENDERS.slice(0, 2).map(l => ({
-            lenderId: l.id,
-            lenderName: l.name,
-            applicationId: id,
-            status: 'PENDING' as LenderDecisionStatus,
-            lastUpdated: new Date().toISOString(),
-            note: null,
-        }));
+    // Another tab changed the data, for example a lender acting while a beneficiary watches.
+    useEffect(() => {
+        const onStorage = (event: StorageEvent) => {
+            if (event.key === APPLICATIONS_KEY || event.key === NOTIFICATIONS_KEY) {
+                const next = {
+                    applications: readJson<LoanApplication[]>(APPLICATIONS_KEY, MOCK_APPLICATIONS),
+                    notifications: readJson<Notification[]>(NOTIFICATIONS_KEY, MOCK_NOTIFICATIONS),
+                };
+                stateRef.current = next;
+                setState(next);
+            }
+        };
+        window.addEventListener('storage', onStorage);
+        return () => window.removeEventListener('storage', onStorage);
+    }, []);
+
+    const findApplication = useCallback((applicationId: string): LoanApplication => {
+        const app = stateRef.current.applications.find(a => a.id === applicationId);
+        if (!app) throw new workflow.WorkflowError('This application could not be found.');
+        return app;
+    }, []);
+
+    const applyTransition = useCallback((result: TransitionResult, now: Date) => {
+        const current = stateRef.current;
+        commit({
+            applications: current.applications.map(a => (a.id === result.app.id ? result.app : a)),
+            notifications: [...toNotifications(result.notices, now), ...current.notifications],
+        });
+    }, [commit]);
+
+    const submitApplication = useCallback((beneficiary: BeneficiaryProfile, data: LoanApplicationFormData, lenders: LenderProfile[]): LoanApplication => {
+        if (lenders.length === 0) {
+            throw new workflow.WorkflowError('Choose at least one lender to share your application with.');
+        }
+        const now = new Date();
+        const timestamp = now.toISOString();
+        const current = stateRef.current;
+        const id = uniqueId('LA', new Set(current.applications.map(a => a.id)));
+        const electricityUsage = data.electricity_usage ?? null;
 
         const newApp: LoanApplication = {
             id,
-            beneficiaryId,
-            beneficiaryName,
+            beneficiaryId: beneficiary.id,
+            beneficiaryName: beneficiary.name,
+            applicantProfile: { occupation: beneficiary.occupation, city: beneficiary.city, state: beneficiary.state },
+            consentGivenAt: timestamp,
             ...data,
-            electricity_usage: data.electricity_usage ?? null,
+            electricity_usage: electricityUsage,
             status: 'SUBMITTED',
-            submittedAt: new Date().toISOString(),
-            lastUpdatedAt: new Date().toISOString(),
-            assessment,
-            documents: defaultDocs,
-            lenderDecisions: defaultDecisions,
+            submittedAt: timestamp,
+            lastUpdatedAt: timestamp,
+            assessment: assessCredit({
+                beneficiary_id: beneficiary.id,
+                monthly_income: data.monthly_income,
+                monthly_expenses: data.monthly_expenses,
+                existing_emi: data.existing_emi,
+                loan_amount: data.loan_amount,
+                repayment_history: data.repayment_history,
+                electricity_usage: electricityUsage,
+            }, 'NOT_PROVIDED'),
+            documents: blankDocuments(id, beneficiary.id),
+            lenderDecisions: lenders.map(lender => ({
+                lenderId: lender.id,
+                lenderName: lender.name,
+                applicationId: id,
+                status: 'PENDING',
+                lastUpdated: timestamp,
+                note: null,
+            })),
             offers: [],
             disbursementSteps: [],
         };
 
-        setApplications(prev => [newApp, ...prev]);
+        const notices: NoticeDraft[] = [
+            { userId: beneficiary.id, userRole: 'beneficiary', type: 'success', title: 'Application Submitted', message: `Your application #${id} was shared with ${lenders.map(l => l.name).join(', ')}.` },
+            ...lenders.map((lender): NoticeDraft => ({ userId: lender.id, userRole: 'lender', type: 'info', title: 'New Application Available', message: `Application #${id} from ${beneficiary.name} was shared with you for review.` })),
+        ];
 
-        // Add notification
-        const notif: Notification = {
-            id: `NOTIF${Date.now()}`,
-            userId: beneficiaryId,
-            userRole: 'beneficiary',
-            title: 'Application Submitted',
-            message: `Your loan application #${id} has been submitted successfully.`,
-            type: 'success',
-            read: false,
-            createdAt: new Date().toISOString(),
-        };
-        setNotifications(prev => [notif, ...prev]);
-
+        commit({
+            applications: [newApp, ...current.applications],
+            notifications: [...toNotifications(notices, now), ...current.notifications],
+        });
         return newApp;
-    }, []);
+    }, [commit]);
 
-    const acceptOffer = useCallback((offerId: string, applicationId: string) => {
-        setApplications(prev => prev.map(app => {
-            if (app.id !== applicationId) return app;
-            const updatedOffers = app.offers.map(o => ({
-                ...o,
-                status: (o.id === offerId ? 'ACCEPTED' : o.status === 'PENDING' ? 'DECLINED' : o.status) as OfferStatus,
-            }));
-            const disbursementSteps = [
-                { label: 'Offer Accepted', status: 'completed' as const, date: new Date().toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) },
-                { label: 'Agreement Signed', status: 'current' as const, date: null },
-                { label: 'Verification Complete', status: 'pending' as const, date: null },
-                { label: 'Disbursement Initiated', status: 'pending' as const, date: null },
-                { label: 'Amount Credited (Simulated)', status: 'pending' as const, date: null },
-            ];
-            return { ...app, offers: updatedOffers, status: 'OFFER_ACCEPTED' as ApplicationStatus, disbursementSteps, lastUpdatedAt: new Date().toISOString() };
-        }));
-    }, []);
+    const acceptOffer = useCallback((offerId: string, applicationId: string, beneficiaryId: string) => {
+        const now = new Date();
+        applyTransition(workflow.acceptOffer(findApplication(applicationId), beneficiaryId, offerId, now), now);
+    }, [applyTransition, findApplication]);
 
-    const declineOffer = useCallback((offerId: string) => {
-        setApplications(prev => prev.map(app => ({
-            ...app,
-            offers: app.offers.map(o => o.id === offerId ? { ...o, status: 'DECLINED' as OfferStatus } : o),
-        })));
-    }, []);
+    const declineOffer = useCallback((offerId: string, applicationId: string, beneficiaryId: string) => {
+        const now = new Date();
+        applyTransition(workflow.declineOffer(findApplication(applicationId), beneficiaryId, offerId, now), now);
+    }, [applyTransition, findApplication]);
 
-    const uploadDocument = useCallback((appId: string, docId: string, filename: string) => {
-        setApplications(prev => prev.map(app => {
-            if (app.id !== appId) return app;
-            const updatedDocs = app.documents.map(d => {
-                if (d.id !== docId) return d;
-                const status: VerificationStatus = 'DOCUMENT_UPLOADED';
-                return { ...d, filename, uploadedAt: new Date().toISOString(), verification_status: status, checkNote: 'Awaiting basic checks. [DEMO]' };
-            });
-            // Simulate check passing after a brief delay via state update:
-            setTimeout(() => {
-                setApplications(inner => inner.map(a => {
-                    if (a.id !== appId) return a;
-                    return {
-                        ...a,
-                        documents: a.documents.map(d => d.id === docId ? { ...d, verification_status: 'CHECKS_PASSED' as VerificationStatus, checkNote: 'File format checks passed. Demo — not government-verified.' } : d),
-                    };
-                }));
-            }, 2000);
-            return { ...app, documents: updatedDocs };
-        }));
-    }, []);
+    const uploadDocument = useCallback((applicationId: string, documentId: string, beneficiaryId: string, file: File) => {
+        const uploadedAt = new Date();
+        // Only the file's details are kept. The contents never leave the browser in this mock.
+        const uploaded = workflow.recordDocumentUpload(findApplication(applicationId), beneficiaryId, documentId, file.name, uploadedAt);
+        applyTransition({ app: uploaded, notices: [] }, uploadedAt);
 
-    const updateLenderDecision = useCallback((applicationId: string, lenderId: string, lenderName: string, status: LenderDecisionStatus, note?: string) => {
-        setApplications(prev => prev.map(app => {
-            if (app.id !== applicationId) return app;
-            const existing = app.lenderDecisions.find(d => d.lenderId === lenderId);
-            let updatedDecisions: LenderDecision[];
-            if (existing) {
-                updatedDecisions = app.lenderDecisions.map(d =>
-                    d.lenderId === lenderId ? { ...d, status, note: note || d.note, lastUpdated: new Date().toISOString() } : d
-                );
-            } else {
-                updatedDecisions = [...app.lenderDecisions, {
-                    lenderId, lenderName, applicationId, status,
-                    lastUpdated: new Date().toISOString(),
-                    note: note || null,
-                }];
-            }
+        const result = workflow.checkDocumentFile(file);
+        window.setTimeout(() => {
+            const now = new Date();
+            applyTransition(workflow.completeDocumentCheck(findApplication(applicationId), documentId, result, now), now);
+        }, DOCUMENT_CHECK_DELAY_MS);
+    }, [applyTransition, findApplication]);
 
-            // Recalculate aggregated status
-            const allStatuses = updatedDecisions.map(d => d.status);
-            let newAppStatus: ApplicationStatus = app.status;
-            if (allStatuses.some(s => s === 'OFFER_MADE') && app.status !== 'OFFER_ACCEPTED' && app.status !== 'DISBURSED') {
-                newAppStatus = 'OFFERS_AVAILABLE';
-            } else if (allStatuses.every(s => s === 'REJECTED')) {
-                newAppStatus = 'REJECTED';
-            } else if (app.status === 'SUBMITTED' && allStatuses.some(s => s === 'UNDER_REVIEW' || s === 'INFO_REQUESTED')) {
-                newAppStatus = 'UNDER_REVIEW';
-            }
+    const syncApplicantProfile = useCallback((beneficiary: BeneficiaryProfile) => {
+        const current = stateRef.current;
+        commit({
+            ...current,
+            applications: current.applications.map(app => app.beneficiaryId !== beneficiary.id ? app : {
+                ...app,
+                beneficiaryName: beneficiary.name,
+                applicantProfile: { occupation: beneficiary.occupation, city: beneficiary.city, state: beneficiary.state },
+            }),
+        });
+    }, [commit]);
 
-            return { ...app, lenderDecisions: updatedDecisions, status: newAppStatus, lastUpdatedAt: new Date().toISOString() };
-        }));
-    }, []);
+    const updateLenderDecision = useCallback((applicationId: string, lender: LenderProfile, status: LenderAction, note: string | null) => {
+        const now = new Date();
+        applyTransition(workflow.applyLenderDecision(findApplication(applicationId), lender, status, note, now), now);
+    }, [applyTransition, findApplication]);
 
-    const createOffer = useCallback((applicationId: string, lenderId: string, data: CreateOfferFormData) => {
-        const lender = MOCK_LENDERS.find(l => l.id === lenderId)!;
-        const newOffer: LoanOffer = {
-            id: `OFF${Date.now()}`,
-            lender_id: lenderId,
-            lenderName: lender.name,
-            lenderLogoInitials: lender.logoInitials,
-            lenderLogoColor: lender.logoColor,
-            applicationId,
-            beneficiaryId: applications.find(a => a.id === applicationId)?.beneficiaryId || '',
-            amount: data.amount,
-            interest_rate: data.interest_rate,
-            tenure_months: data.tenure_months,
-            status: 'PENDING',
-            features: data.features.split(',').map(f => f.trim()).filter(Boolean),
-            createdAt: new Date().toISOString(),
-            expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
-        };
+    const createOffer = useCallback((applicationId: string, lender: LenderProfile, data: CreateOfferFormData) => {
+        const now = new Date();
+        const taken = new Set(stateRef.current.applications.flatMap(a => a.offers.map(o => o.id)));
+        const features = (data.features ?? '').split(',').map(f => f.trim()).filter(Boolean);
+        applyTransition(workflow.makeOffer(findApplication(applicationId), lender, { ...data, features }, uniqueId('OFF', taken), now), now);
+    }, [applyTransition, findApplication]);
 
-        setApplications(prev => prev.map(app => {
-            if (app.id !== applicationId) return app;
-            const existingOffer = app.offers.find(o => o.lender_id === lenderId && o.status === 'PENDING');
-            const offers = existingOffer
-                ? app.offers.map(o => o.id === existingOffer.id ? newOffer : o)
-                : [...app.offers, newOffer];
-            return { ...app, offers };
-        }));
+    const withdrawOffer = useCallback((applicationId: string, lender: LenderProfile, offerId: string) => {
+        const now = new Date();
+        applyTransition(workflow.withdrawOffer(findApplication(applicationId), lender, offerId, now), now);
+    }, [applyTransition, findApplication]);
 
-        updateLenderDecision(applicationId, lenderId, lender.name, 'OFFER_MADE', `Offer created: ₹${data.amount.toLocaleString('en-IN')} at ${data.interest_rate}% for ${data.tenure_months} months.`);
-    }, [applications, updateLenderDecision]);
+    const advanceDisbursement = useCallback((applicationId: string, lender: LenderProfile) => {
+        const now = new Date();
+        applyTransition(workflow.advanceDisbursement(findApplication(applicationId), lender.id, now), now);
+    }, [applyTransition, findApplication]);
 
     const markNotificationRead = useCallback((id: string) => {
-        setNotifications(prev => prev.map(n => n.id === id ? { ...n, read: true } : n));
-    }, []);
+        const current = stateRef.current;
+        commit({ ...current, notifications: current.notifications.map(n => (n.id === id ? { ...n, read: true } : n)) });
+    }, [commit]);
 
     const markAllNotificationsRead = useCallback((userId: string) => {
-        setNotifications(prev => prev.map(n => n.userId === userId ? { ...n, read: true } : n));
-    }, []);
+        const current = stateRef.current;
+        commit({ ...current, notifications: current.notifications.map(n => (n.userId === userId ? { ...n, read: true } : n)) });
+    }, [commit]);
 
     const getApplicationsByBeneficiary = useCallback((beneficiaryId: string) =>
         applications.filter(a => a.beneficiaryId === beneficiaryId), [applications]);
 
     const getApplicationsByLender = useCallback((lenderId: string) =>
-        applications.filter(a => a.lenderDecisions.some(d => d.lenderId === lenderId)), [applications]);
+        applications.filter(a => workflow.isSharedWithLender(a, lenderId)), [applications]);
 
-    const getOffersByLender = useCallback((lenderId: string): LoanOffer[] =>
+    const getBeneficiaryApplication = useCallback((applicationId: string, beneficiaryId: string) =>
+        applications.find(a => a.id === applicationId && a.beneficiaryId === beneficiaryId), [applications]);
+
+    const getLenderApplication = useCallback((applicationId: string, lenderId: string) =>
+        applications.find(a => a.id === applicationId && workflow.isSharedWithLender(a, lenderId)), [applications]);
+
+    const getOffersByLender = useCallback((lenderId: string) =>
         applications.flatMap(a => a.offers.filter(o => o.lender_id === lenderId)), [applications]);
 
     const getNotificationsByUser = useCallback((userId: string) =>
         notifications.filter(n => n.userId === userId), [notifications]);
 
+    const resetDemoData = useCallback(() => {
+        removeKey(APPLICATIONS_KEY);
+        removeKey(NOTIFICATIONS_KEY);
+        const fresh = { applications: MOCK_APPLICATIONS, notifications: MOCK_NOTIFICATIONS };
+        stateRef.current = fresh;
+        setState(fresh);
+    }, []);
+
     return (
         <AppContext.Provider value={{
             applications, notifications,
-            submitApplication, acceptOffer, declineOffer, uploadDocument,
-            updateLenderDecision, createOffer,
+            submitApplication, acceptOffer, declineOffer, uploadDocument, syncApplicantProfile,
+            updateLenderDecision, createOffer, withdrawOffer, advanceDisbursement,
             markNotificationRead, markAllNotificationsRead,
             getApplicationsByBeneficiary, getApplicationsByLender,
+            getBeneficiaryApplication, getLenderApplication,
             getOffersByLender, getNotificationsByUser,
+            resetDemoData,
         }}>
             {children}
         </AppContext.Provider>
     );
 }
-
-export function useApp() {
-    const ctx = useContext(AppContext);
-    if (!ctx) throw new Error('useApp must be inside AppProvider');
-    return ctx;
-}
-
-// Re-export MOCK_OFFERS for convenience
-export { MOCK_OFFERS };

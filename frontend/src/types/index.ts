@@ -47,9 +47,6 @@ export type DocumentType =
     | 'INCOME_PROOF'
     | 'BANK_STATEMENT'
     | 'ELECTRICITY_BILL'
-    | 'AADHAAR_CARD'
-    | 'PAN_CARD'
-    | 'ADDRESS_PROOF'
     | 'OTHER';
 
 export type UserRole = 'beneficiary' | 'lender';
@@ -72,14 +69,12 @@ export interface BeneficiaryProfile {
     name: string;
     email: string;
     phone: string;
-    age: number;
+    age: number | null;
     occupation: string;
     address: string;
     city: string;
     state: string;
     pincode: string;
-    aadharLinked: boolean;
-    panLinked: boolean;
 }
 
 export interface LenderProfile {
@@ -100,7 +95,7 @@ export interface CreditAssessmentRequest {
     existing_emi: number;
     loan_amount: number;
     repayment_history: RepaymentHistory;
-    electricity_usage: number;
+    electricity_usage: number | null;
 }
 
 export interface CreditAssessmentResponse {
@@ -166,6 +161,10 @@ export interface LoanApplication {
     id: string;
     beneficiaryId: string;
     beneficiaryName: string;
+    // Only the profile fields a lender needs. Contact details are not shared.
+    applicantProfile: Pick<BeneficiaryProfile, 'occupation' | 'city' | 'state'>;
+    // When the beneficiary agreed to share this application with the lenders in lenderDecisions.
+    consentGivenAt: string;
 
     // Financial inputs
     monthly_income: number;
@@ -209,7 +208,7 @@ export interface CreateOfferFormData {
     amount: number;
     interest_rate: number;
     tenure_months: number;
-    features: string;
+    features?: string;
 }
 
 export interface LoanApplicationFormData {

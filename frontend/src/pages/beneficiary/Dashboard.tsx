@@ -1,11 +1,12 @@
 import { Link } from 'react-router-dom';
-import { useRole } from '@/context/RoleContext';
-import { useApp } from '@/context/AppContext';
+import { isProfileComplete, useBeneficiary } from '@/context/useAuth';
+import { useApp } from '@/context/useApp';
 import { StatCard, Card, DemoDisclaimer } from '@/components/shared/UI';
 import { StatusBadge } from '@/components/shared/StatusBadge';
 import { ApplicationWorkflowStepper } from '@/components/shared/Stepper';
+import { getAcceptedOffer, workflowStep } from '@/lib/workflow';
 import {
-    FileText, Clock, CheckCircle, IndianRupee, ArrowRight, ExternalLink
+    FileText, Clock, CheckCircle, IndianRupee, ArrowRight, ExternalLink, UserCheck
 } from 'lucide-react';
 
 function formatCurrency(amount: number) {
@@ -16,36 +17,22 @@ function formatDate(iso: string) {
     return new Date(iso).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
 }
 
-const STATUS_TO_STEP: Record<string, number> = {
-    SUBMITTED: 0,
-    DOCUMENTS_REQUIRED: 1,
-    UNDER_REVIEW: 3,
-    OFFERS_AVAILABLE: 3,
-    OFFER_ACCEPTED: 4,
-    REJECTED: 4,
-    DISBURSED: 4,
-};
-
 export default function BeneficiaryDashboard() {
-    const { beneficiary } = useRole();
-    const { getApplicationsByBeneficiary } = useApp();
+    const beneficiary = useBeneficiary();
+    const { getApplicationsByBeneficiary, getNotificationsByUser } = useApp();
     const apps = getApplicationsByBeneficiary(beneficiary.id);
 
-    const activeApp = apps.find(a => a.status !== 'DISBURSED' && a.status !== 'REJECTED');
+    const activeApps = apps.filter(a => a.status !== 'DISBURSED' && a.status !== 'REJECTED');
+    const activeApp = activeApps[0];
     const approved = apps.filter(a => a.status === 'DISBURSED' || a.status === 'OFFER_ACCEPTED');
-    const totalBorrowed = approved.reduce((sum, a) => {
-        const acceptedOffer = a.offers.find(o => o.status === 'ACCEPTED');
-        return sum + (acceptedOffer?.amount || 0);
-    }, 0);
+    // Borrowed means the (simulated) money has actually gone out, not just that an offer was accepted.
+    const totalBorrowed = apps
+        .filter(a => a.status === 'DISBURSED')
+        .reduce((sum, a) => sum + (getAcceptedOffer(a)?.amount || 0), 0);
     const pendingOffers = apps.flatMap(a => a.offers.filter(o => o.status === 'PENDING'));
-
-    const currentStep = activeApp ? (STATUS_TO_STEP[activeApp.status] ?? 0) : 0;
-
-    const stepDates: Record<number, string> = activeApp ? {
-        0: formatDate(activeApp.submittedAt),
-        1: formatDate(activeApp.submittedAt),
-        2: formatDate(activeApp.submittedAt),
-    } : {};
+    const latestAccepted = apps.find(a => a.status === 'OFFER_ACCEPTED') ?? apps.find(a => a.status === 'DISBURSED');
+    const acceptedOffer = latestAccepted && getAcceptedOffer(latestAccepted);
+    const recentActivity = getNotificationsByUser(beneficiary.id).slice(0, 4);
 
     return (
         <div className="space-y-6">
@@ -57,33 +44,47 @@ export default function BeneficiaryDashboard() {
 
             <DemoDisclaimer />
 
+            {/* Workflow step 2: the profile comes before the first application */}
+            {!isProfileComplete(beneficiary) && (
+                <Card className="flex flex-col sm:flex-row sm:items-center gap-3 border-emerald-500/30">
+                    <UserCheck size={20} className="text-emerald-400 flex-shrink-0" />
+                    <div className="flex-1">
+                        <p className="text-sm font-semibold text-white">Complete your profile to apply for a loan</p>
+                        <p className="text-xs text-slate-500 mt-0.5">Lenders need your occupation and location to review an application.</p>
+                    </div>
+                    <Link to="/beneficiary/profile" className="px-4 py-2 bg-emerald-500 hover:bg-emerald-600 text-white rounded-lg text-sm font-semibold transition-colors text-center whitespace-nowrap">
+                        Complete Profile
+                    </Link>
+                </Card>
+            )}
+
             {/* Stats */}
-            <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
                 <StatCard
                     label="Total Applications"
                     value={apps.length}
-                    sub={<Link to="/beneficiary/applications" className="text-xs text-emerald-400 hover:underline flex items-center gap-1">View all <ArrowRight size={10} /></Link> as unknown as string}
+                    sub={<Link to="/beneficiary/applications" className="text-xs text-emerald-400 hover:underline flex items-center gap-1">View all <ArrowRight size={10} /></Link>}
                     icon={<FileText size={20} />}
                     color="emerald"
                 />
                 <StatCard
-                    label="Ongoing Application"
-                    value={activeApp ? 1 : 0}
-                    sub={activeApp ? 'In Progress' : 'None active'}
+                    label="Ongoing Applications"
+                    value={activeApps.length}
+                    sub={activeApps.length > 0 ? 'In progress' : 'None active'}
                     icon={<Clock size={20} />}
                     color="blue"
                 />
                 <StatCard
                     label="Approved Loans"
                     value={approved.length}
-                    sub={approved.length > 0 ? 'Total received' : 'None yet'}
+                    sub={approved.length > 0 ? 'Offers you accepted' : 'None yet'}
                     icon={<CheckCircle size={20} />}
                     color="emerald"
                 />
                 <StatCard
                     label="Total Borrowed"
                     value={totalBorrowed > 0 ? formatCurrency(totalBorrowed) : '—'}
-                    sub={totalBorrowed > 0 ? 'Across all loans' : 'No loans yet'}
+                    sub={totalBorrowed > 0 ? 'Simulated disbursements' : 'Nothing disbursed yet'}
                     icon={<IndianRupee size={20} />}
                     color="amber"
                 />
@@ -101,7 +102,7 @@ export default function BeneficiaryDashboard() {
                             <ExternalLink size={16} />
                         </Link>
                     </div>
-                    <ApplicationWorkflowStepper currentStep={currentStep} dates={stepDates} />
+                    <ApplicationWorkflowStepper currentStep={workflowStep(activeApp.status)} dates={{ 0: formatDate(activeApp.submittedAt) }} />
                 </Card>
             )}
 
@@ -115,7 +116,8 @@ export default function BeneficiaryDashboard() {
                             View All <ArrowRight size={14} />
                         </Link>
                     </div>
-                    <table className="w-full">
+                    <div className="overflow-x-auto">
+                    <table className="w-full min-w-[480px]">
                         <thead>
                             <tr className="text-left">
                                 <th className="text-xs text-slate-500 font-medium pb-3">ID</th>
@@ -146,6 +148,7 @@ export default function BeneficiaryDashboard() {
                             )}
                         </tbody>
                     </table>
+                    </div>
                 </Card>
 
                 {/* Documents Summary */}
@@ -166,7 +169,49 @@ export default function BeneficiaryDashboard() {
                             ))}
                         </div>
                     ) : (
-                        <p className="text-slate-500 text-sm">No documents uploaded yet.</p>
+                        <p className="text-slate-500 text-sm">No application is in progress, so no documents are needed right now.</p>
+                    )}
+                </Card>
+            </div>
+
+            {/* Accepted offer + Recent activity */}
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                {acceptedOffer && latestAccepted && (
+                    <Card>
+                        <div className="flex items-center justify-between mb-4">
+                            <h2 className="text-base font-bold text-white">Accepted Offer</h2>
+                            <StatusBadge status={latestAccepted.status} size="sm" />
+                        </div>
+                        <div className="flex items-center gap-3 mb-3">
+                            <div className="w-9 h-9 rounded-full flex items-center justify-center text-white text-xs font-bold flex-shrink-0" style={{ backgroundColor: acceptedOffer.lenderLogoColor }}>
+                                {acceptedOffer.lenderLogoInitials}
+                            </div>
+                            <div>
+                                <p className="text-sm font-semibold text-white">{acceptedOffer.lenderName}</p>
+                                <p className="text-xs text-slate-500">Application #{latestAccepted.id}</p>
+                            </div>
+                        </div>
+                        <p className="text-sm text-slate-300">
+                            {formatCurrency(acceptedOffer.amount)} at {acceptedOffer.interest_rate}% p.a. for {acceptedOffer.tenure_months} months
+                        </p>
+                        <Link to="/beneficiary/disbursement" className="text-emerald-400 hover:text-emerald-300 text-sm flex items-center gap-1 mt-3 transition-colors">
+                            Track disbursement <ArrowRight size={14} />
+                        </Link>
+                    </Card>
+                )}
+                <Card className={acceptedOffer ? '' : 'lg:col-span-2'}>
+                    <h2 className="text-base font-bold text-white mb-4">Recent Activity</h2>
+                    {recentActivity.length === 0 ? (
+                        <p className="text-slate-500 text-sm">Nothing yet. Updates on your applications will appear here.</p>
+                    ) : (
+                        <ul className="space-y-3">
+                            {recentActivity.map(n => (
+                                <li key={n.id}>
+                                    <p className="text-sm text-slate-200">{n.title}</p>
+                                    <p className="text-xs text-slate-500 mt-0.5">{n.message}</p>
+                                </li>
+                            ))}
+                        </ul>
                     )}
                 </Card>
             </div>
@@ -183,7 +228,7 @@ export default function BeneficiaryDashboard() {
                             View All <ArrowRight size={14} />
                         </Link>
                     </div>
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
                         {pendingOffers.slice(0, 3).map(offer => (
                             <div key={offer.id} className="bg-[#0d1117] rounded-xl p-4 border border-[#30363d] hover:border-slate-500 transition-all">
                                 <div className="flex items-center gap-3 mb-3">
@@ -195,17 +240,17 @@ export default function BeneficiaryDashboard() {
                                     </div>
                                     <span className="text-sm font-semibold text-white">{offer.lenderName}</span>
                                 </div>
-                                <div className="grid grid-cols-3 gap-2 mb-3">
+                                <div className="grid grid-cols-[1.5fr_1fr_1fr] gap-2 mb-3">
                                     <div>
-                                        <p className="text-emerald-400 font-bold text-base">{formatCurrency(offer.amount)}</p>
+                                        <p className="text-emerald-400 font-bold text-sm whitespace-nowrap">{formatCurrency(offer.amount)}</p>
                                         <p className="text-slate-500 text-xs">Loan Amount</p>
                                     </div>
                                     <div>
-                                        <p className="text-white font-bold text-base">{offer.interest_rate}%</p>
+                                        <p className="text-white font-bold text-sm">{offer.interest_rate}%</p>
                                         <p className="text-slate-500 text-xs">Interest Rate</p>
                                     </div>
                                     <div>
-                                        <p className="text-white font-bold text-base">{offer.tenure_months}M</p>
+                                        <p className="text-white font-bold text-sm">{offer.tenure_months}M</p>
                                         <p className="text-slate-500 text-xs">Tenure</p>
                                     </div>
                                 </div>
