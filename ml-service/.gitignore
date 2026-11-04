@@ -1,0 +1,7 @@
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+# Rebuilt by `python -m training.train`, so no binary model file is trusted from the repo.
+models/
+data/

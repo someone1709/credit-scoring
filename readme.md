@@ -11,16 +11,16 @@ Traditional lending relies heavily on credit history, which excludes first-time 
 | Layer | Status |
 |---|---|
 | Frontend (React + TS + Tailwind) | Built, runs on demo data or the backend |
-| Backend (Spring Boot + MySQL) | Built, rule-based scoring until the ML service exists |
-| ML service (FastAPI) | Planned |
-| Integration | Frontend and backend connected; ML service still planned |
+| Backend (Spring Boot + MySQL) | Built, with labelled rule-based scoring if the ML service is down |
+| ML service (FastAPI) | Built, trained on synthetic data only |
+| Integration | Frontend, backend and ML service connected |
 
 Development order: Frontend (mock) -> Backend -> ML -> Integration.
 
 ## Key Features
 **Beneficiary Portal:** apply for loans, upload documents, track application and document status, compare lender offers.
 **Lender Portal:** review applications and beneficiary profiles, view risk insights, approve / reject / request info (demo actions), create offers, track disbursements (mock).
-**Credit Assessment:** risk score and category (LOW / MEDIUM / HIGH), income bracket, composite score and segment, SHAP-style explanations.
+**Credit Assessment:** risk score and category (LOW / MEDIUM / HIGH), income bracket, composite score and segment, SHAP explanations.
 **Document Status Tracking:** upload, basic checks, and a clearly labelled status showing what has and has not been verified.
 
 ## Score Conventions
@@ -39,8 +39,8 @@ React, TypeScript, Tailwind CSS, Recharts | Java 21, Spring Boot | Python, FastA
 5. Beneficiary compares and accepts an offer.
 
 ## Repository Structure
-beneficiary-credit-scoring/
-  frontend/  backend/  ml-service/  verification/  sample-data/
+credit-scoring/
+  frontend/  backend/  ml-service/
 
 
 ## Architecture

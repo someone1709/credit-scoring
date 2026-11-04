@@ -58,6 +58,10 @@ app:
     log-links: ${APP_LOG_RESET_LINKS:false}
   cors:
     allowed-origins: ${APP_CORS_ORIGINS:http://localhost:5173,http://localhost:5174,http://localhost:5175}
+  ml:
+    # Where the FastAPI service runs. Leave empty to use the labelled rule-based scoring.
+    url: ${ML_SERVICE_URL:}
+    timeout-seconds: 3
   seed:
     # Set a password to create the demo lenders and beneficiaries on startup.
     demo-password: ${APP_SEED_DEMO_PASSWORD:}

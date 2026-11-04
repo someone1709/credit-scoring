@@ -26,7 +26,9 @@ You need Java 21 and MySQL 8. The Maven wrapper (`./mvnw`) downloads Maven for y
 
 4. Check it's up at <http://localhost:8080/api/v1/health>.
 
-5. In `frontend/`, run `npm run dev:live` and open <http://localhost:5175>.
+5. Optionally start the [ML service](../ml-service/README.md). Without it, scoring uses the labelled rules.
+
+6. In `frontend/`, run `npm run dev:live` and open <http://localhost:5175>.
 
 There's no lender until one registers. To get some right away, set `APP_SEED_DEMO_PASSWORD` in `.env`. That creates Unity Bank, Grameen Finance, Saha Cooperative Bank and a beneficiary, all using that password. Their emails are in `DemoDataSeeder.java`.
 
@@ -48,7 +50,7 @@ src/main/java/com/creditscore/backend/
 ├── common/       Error format, ids
 ├── auth/         Sign-in, tokens, password reset, profile updates
 ├── user/         Users, beneficiary and lender profiles, lender directory
-├── assessment/   The fixed contract, and the scoring behind AssessmentProvider
+├── assessment/   The fixed contract, the ML service client and the fallback rules
 ├── application/  Applications, decisions, offers, documents, disbursement
 └── notification/ Notifications
 src/main/resources/schema.sql   The database tables
@@ -114,7 +116,7 @@ All routes start with `/api/v1`. JSON is snake_case. `repayment_history` values 
 - **Lender privacy:** a lender can only reach applications the beneficiary chose to share, and any other id answers 404, the same as one that doesn't exist. Responses hold only that lender's own decision and offers. `status` is null unless their offer won, because it would reveal what other lenders did. Lenders never receive the applicant's email, phone or address.
 - **Independent decisions:** one lender's rejection changes only that lender's decision. The application is `REJECTED` only when every chosen lender has rejected it.
 - **One accepted offer:** each change locks the application row, and a unique database index blocks a second accepted offer even if the code were wrong.
-- **No fabricated results:** `probability_of_default` and `model_confidence` stay null until a real model provides them. No repayment history adds no risk.
+- **No fabricated results:** `probability_of_default` is only ever set by the model, and `model_confidence` stays null. No repayment history adds no risk.
 - **Documents:** type, size and the file's actual contents are checked. Only the name and result are stored, and the file is discarded. A passed check doesn't prove a document is genuine.
 
 ## Security
@@ -125,8 +127,10 @@ All routes start with `/api/v1`. JSON is snake_case. `repayment_history` values 
 
 **Not included yet:** real email (reset links are only printed to this server's log, and only when `APP_LOG_RESET_LINKS=true`), limits on repeated sign-in attempts, and checks on lender licenses. Add these before any real use.
 
-## Connecting the ML service
+## The ML service
 
-`RuleBasedAssessmentProvider` is a placeholder that matches `frontend/src/lib/assessment.ts`. For Phase 3, write a class that implements `AssessmentProvider` and calls the FastAPI service using the fixed contract in `AssessmentContract`, then remove the placeholder's `@Component`. Nothing else needs to change.
+Set `ML_SERVICE_URL` in `.env` to where [`ml-service`](../ml-service/README.md) runs. `MlAssessmentProvider` sends it the fixed contract from brief §6, checks the answer, and always sets `verification_status` itself from the application's documents.
+
+If the setting is empty, or the service is down, slow (over 3 seconds) or gives an invalid answer, `RuleBasedAssessmentProvider` takes over and the result says `RULE_BASED`, with no probability. Applying keeps working, and nothing is passed off as a model's output. The rules match `frontend/src/lib/assessment.ts`.
 
 The scoring thresholds are still placeholders for the team to confirm. They're listed under "Assumptions to confirm" in the [frontend README](../frontend/README.md).

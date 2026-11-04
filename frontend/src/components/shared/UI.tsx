@@ -113,6 +113,17 @@ export function DemoDisclaimer({ className }: { className?: string }) {
     );
 }
 
+/** Says plainly where a score came from. A trained model and fixed rules deserve different caveats. */
+export function AssessmentNote({ method, audience }: { method: 'SHAP' | 'RULE_BASED'; audience: 'beneficiary' | 'lender' }) {
+    const source = method === 'SHAP'
+        ? 'Estimated by a model trained on synthetic data and not validated on real borrowers.'
+        : 'Illustrative rule-based result, not a trained model.';
+    const decision = audience === 'lender'
+        ? 'This supports your judgement, and the decision is yours.'
+        : "It isn't a lending decision. Lenders make their own decisions.";
+    return <p className="text-xs text-slate-600 mt-3">{source} {decision}</p>;
+}
+
 /** Shown when a page's action fails, such as accepting an offer that has just expired. */
 export function ActionError({ message, className }: { message: string | null; className?: string }) {
     if (!message) return null;

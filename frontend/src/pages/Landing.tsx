@@ -7,7 +7,7 @@ const features = [
     {
         icon: BarChart3,
         title: 'Alternative Credit Scoring',
-        desc: 'A rule-based assessment using income, DTI, expense ratios and repayment history. No CIBIL score required.',
+        desc: 'An assessment using DTI, expense ratios, surplus and repayment history. No CIBIL score required.',
     },
     {
         icon: Users,
@@ -153,7 +153,7 @@ export default function LandingPage() {
                 <div className="p-5 bg-amber-500/5 border border-amber-500/20 rounded-xl text-center">
                     <p className="text-amber-400 text-sm font-semibold mb-1">Academic Prototype Notice</p>
                     <p className="text-slate-500 text-xs leading-relaxed">
-                        This is a frontend prototype. All data is synthetic. No real loans are issued, no real money is transferred, and no real financial decisions are made. All scores are rule-based and illustrative only. Not for production use.
+                        This is a frontend prototype. All data is synthetic. No real loans are issued, no real money is transferred, and no real financial decisions are made. All scores are illustrative, from fixed rules or a model trained on synthetic data. Not for production use.
                     </p>
                 </div>
             </section>
