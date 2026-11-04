@@ -61,9 +61,9 @@ export function Topbar({ onOpenMenu }: { onOpenMenu: () => void }) {
         navigate('/login', { replace: true });
     };
 
-    const handleReset = () => {
+    const handleReset = async () => {
         if (window.confirm('Reset all applications, offers and notifications to the original demo data?')) {
-            resetDemoData();
+            await resetDemoData();
             setMenuOpen(false);
             navigate(homeForRole(role));
         }

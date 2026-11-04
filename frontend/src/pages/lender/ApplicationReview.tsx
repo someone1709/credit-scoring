@@ -110,13 +110,12 @@ export default function ApplicationReview() {
     const acceptedMine = getAcceptedOffer(app)?.lender_id === lender.id;
     const ass = app.assessment;
 
-    const perform = async (done: keyof typeof ACTION_LABEL, action: () => void) => {
+    const perform = async (done: keyof typeof ACTION_LABEL, action: () => Promise<void>) => {
         setActionLoading(true);
         setActionError(null);
         setActionDone('');
-        await new Promise(r => setTimeout(r, 500));
         try {
-            action();
+            await action();
             setActionDone(ACTION_LABEL[done]);
             setNoteInput('');
             setShowOfferForm(false);

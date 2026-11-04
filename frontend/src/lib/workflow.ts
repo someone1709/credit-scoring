@@ -91,7 +91,7 @@ export function getLiveOffer(app: LoanApplication, lenderId: string): LoanOffer 
 
 /** True once a beneficiary has accepted an offer: no lender can change anything after that. */
 export function isClosedToDecisions(app: LoanApplication): boolean {
-    return getAcceptedOffer(app) !== undefined;
+    return getAcceptedOffer(app) !== undefined || app.closedToLender === true;
 }
 
 export function canUploadDocuments(app: LoanApplication): boolean {

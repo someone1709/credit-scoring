@@ -14,10 +14,10 @@ export default function Documents() {
 
     const [error, setError] = useState<string | null>(null);
 
-    const handleUpload = (docId: string, appId: string, file: File) => {
+    const handleUpload = async (docId: string, appId: string, file: File) => {
         setError(null);
         try {
-            uploadDocument(appId, docId, beneficiary.id, file);
+            await uploadDocument(appId, docId, beneficiary.id, file);
         } catch (e) {
             setError(e instanceof Error ? e.message : 'The upload failed. Please try again.');
         }
@@ -94,7 +94,7 @@ export default function Documents() {
                                                         const file = e.target.files?.[0];
                                                         // Reset so choosing the same file again still fires a change.
                                                         e.target.value = '';
-                                                        if (file) handleUpload(doc.id, app.id, file);
+                                                        if (file) void handleUpload(doc.id, app.id, file);
                                                     }}
                                                 />
                                             </label>

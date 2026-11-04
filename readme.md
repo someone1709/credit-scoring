@@ -10,10 +10,10 @@ Traditional lending relies heavily on credit history, which excludes first-time 
 ## Project Status
 | Layer | Status |
 |---|---|
-| Frontend (React + TS + Tailwind) | In progress, mock data |
-| Backend (Spring Boot + MySQL) | Planned |
+| Frontend (React + TS + Tailwind) | Built, runs on demo data or the backend |
+| Backend (Spring Boot + MySQL) | Built, rule-based scoring until the ML service exists |
 | ML service (FastAPI) | Planned |
-| Integration | Planned |
+| Integration | Frontend and backend connected; ML service still planned |
 
 Development order: Frontend (mock) -> Backend -> ML -> Integration.
 

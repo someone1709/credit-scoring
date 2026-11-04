@@ -3,254 +3,139 @@ import type {
     BeneficiaryProfile,
     CreateOfferFormData,
     LenderProfile,
-    LoanApplication,
     LoanApplicationFormData,
-    Notification,
 } from '@/types';
-import { MOCK_APPLICATIONS, MOCK_NOTIFICATIONS, blankDocuments } from '@/data/mockData';
-import { assessCredit } from '@/lib/assessment';
-import { readJson, removeKey, writeJson } from '@/lib/storage';
-import * as workflow from '@/lib/workflow';
-import type { LenderAction, NoticeDraft, TransitionResult } from '@/lib/workflow';
+import type { AppSnapshot } from '@/types/appService';
+import { isSharedWithLender } from '@/lib/workflow';
+import type { LenderAction } from '@/lib/workflow';
+import { appService } from '@/services/app';
+import { toApiError } from '@/services/http';
+import { useAuth } from './useAuth';
 import { AppContext } from './useApp';
 
-const APPLICATIONS_KEY = 'benescore.applications.v2';
-const NOTIFICATIONS_KEY = 'benescore.notifications.v2';
-const DOCUMENT_CHECK_DELAY_MS = 1500;
-
-let noticeCounter = 0;
-
-function toNotifications(notices: NoticeDraft[], now: Date): Notification[] {
-    return notices.map(notice => ({
-        ...notice,
-        id: `NOTIF${now.getTime()}${noticeCounter++}`,
-        read: false,
-        createdAt: now.toISOString(),
-    }));
-}
-
-function uniqueId(prefix: string, taken: Set<string>): string {
-    let id: string;
-    do {
-        id = `${prefix}${Math.floor(1000 + Math.random() * 9000)}`;
-    } while (taken.has(id));
-    return id;
-}
-
-/** Saved data, with any offer whose validity has lapsed marked as expired. */
-function loadInitialState(): { applications: LoanApplication[]; notifications: Notification[] } {
-    const now = new Date();
-    const notices: NoticeDraft[] = [];
-    const applications = readJson<LoanApplication[]>(APPLICATIONS_KEY, MOCK_APPLICATIONS).map(app => {
-        const result = workflow.expireOffers(app, now);
-        if (!result) return app;
-        notices.push(...result.notices);
-        return result.app;
-    });
-    const notifications = [...toNotifications(notices, now), ...readJson<Notification[]>(NOTIFICATIONS_KEY, MOCK_NOTIFICATIONS)];
-    // Save straight away, so an expiry is only announced once and every tab agrees on it.
-    if (notices.length > 0) {
-        writeJson(APPLICATIONS_KEY, applications);
-        writeJson(NOTIFICATIONS_KEY, notifications);
-    }
-    return { applications, notifications };
-}
+const EMPTY: AppSnapshot = { applications: [], notifications: [] };
 
 export function AppProvider({ children }: { children: React.ReactNode }) {
-    const [state, setState] = useState(loadInitialState);
-    const { applications, notifications } = state;
+    const { user } = useAuth();
+    const userId = user?.profile.id ?? null;
 
-    // Transitions read the latest state here, because they can throw and must not run inside a state updater.
-    const stateRef = useRef(state);
+    // Everything loaded is tagged with its owner, so one user's data can never show for another.
+    const [loaded, setLoaded] = useState<{ userId: string; data: AppSnapshot } | null>(null);
+    const [failure, setFailure] = useState<{ userId: string; message: string } | null>(null);
 
-    const commit = useCallback((next: typeof state) => {
-        stateRef.current = next;
-        setState(next);
-        writeJson(APPLICATIONS_KEY, next.applications);
-        writeJson(NOTIFICATIONS_KEY, next.notifications);
-    }, []);
+    const snapshot = loaded?.userId === userId ? loaded.data : EMPTY;
+    const loadError = failure?.userId === userId ? failure.message : null;
+    const loading = userId !== null && loaded?.userId !== userId && loadError === null;
+    const { applications, notifications } = snapshot;
 
-    // Another tab changed the data, for example a lender acting while a beneficiary watches.
+    // Lets callbacks read the latest user, and drops a response that arrives after the user changed.
+    const userRef = useRef(user);
+    const requestRef = useRef(0);
     useEffect(() => {
-        const onStorage = (event: StorageEvent) => {
-            if (event.key === APPLICATIONS_KEY || event.key === NOTIFICATIONS_KEY) {
-                const next = {
-                    applications: readJson<LoanApplication[]>(APPLICATIONS_KEY, MOCK_APPLICATIONS),
-                    notifications: readJson<Notification[]>(NOTIFICATIONS_KEY, MOCK_NOTIFICATIONS),
-                };
-                stateRef.current = next;
-                setState(next);
-            }
-        };
-        window.addEventListener('storage', onStorage);
-        return () => window.removeEventListener('storage', onStorage);
+        userRef.current = user;
+    }, [user]);
+
+    const reload = useCallback(async (): Promise<void> => {
+        const currentUser = userRef.current;
+        if (!currentUser) return;
+        const request = ++requestRef.current;
+        const data = await appService.load(currentUser);
+        if (request !== requestRef.current) return;
+        setLoaded({ userId: currentUser.profile.id, data });
+        setFailure(null);
     }, []);
 
-    const findApplication = useCallback((applicationId: string): LoanApplication => {
-        const app = stateRef.current.applications.find(a => a.id === applicationId);
-        if (!app) throw new workflow.WorkflowError('This application could not be found.');
-        return app;
-    }, []);
-
-    const applyTransition = useCallback((result: TransitionResult, now: Date) => {
-        const current = stateRef.current;
-        commit({
-            applications: current.applications.map(a => (a.id === result.app.id ? result.app : a)),
-            notifications: [...toNotifications(result.notices, now), ...current.notifications],
+    const firstLoad = useCallback(() => {
+        const id = userRef.current?.profile.id;
+        reload().catch(error => {
+            if (id) setFailure({ userId: id, message: toApiError(error).message });
         });
-    }, [commit]);
+    }, [reload]);
 
-    const submitApplication = useCallback((beneficiary: BeneficiaryProfile, data: LoanApplicationFormData, lenders: LenderProfile[]): LoanApplication => {
-        if (lenders.length === 0) {
-            throw new workflow.WorkflowError('Choose at least one lender to share your application with.');
-        }
-        const now = new Date();
-        const timestamp = now.toISOString();
-        const current = stateRef.current;
-        const id = uniqueId('LA', new Set(current.applications.map(a => a.id)));
-        const electricityUsage = data.electricity_usage ?? null;
+    useEffect(() => {
+        requestRef.current++;
+        if (userId !== null) firstLoad();
+    }, [userId, firstLoad]);
 
-        const newApp: LoanApplication = {
-            id,
-            beneficiaryId: beneficiary.id,
-            beneficiaryName: beneficiary.name,
-            applicantProfile: { occupation: beneficiary.occupation, city: beneficiary.city, state: beneficiary.state },
-            consentGivenAt: timestamp,
-            ...data,
-            electricity_usage: electricityUsage,
-            status: 'SUBMITTED',
-            submittedAt: timestamp,
-            lastUpdatedAt: timestamp,
-            assessment: assessCredit({
-                beneficiary_id: beneficiary.id,
-                monthly_income: data.monthly_income,
-                monthly_expenses: data.monthly_expenses,
-                existing_emi: data.existing_emi,
-                loan_amount: data.loan_amount,
-                repayment_history: data.repayment_history,
-                electricity_usage: electricityUsage,
-            }, 'NOT_PROVIDED'),
-            documents: blankDocuments(id, beneficiary.id),
-            lenderDecisions: lenders.map(lender => ({
-                lenderId: lender.id,
-                lenderName: lender.name,
-                applicationId: id,
-                status: 'PENDING',
-                lastUpdated: timestamp,
-                note: null,
-            })),
-            offers: [],
-            disbursementSteps: [],
-        };
+    // Background refreshes keep what's on screen if they fail. The next one can succeed.
+    const refreshQuietly = useCallback(() => {
+        reload().catch(() => undefined);
+    }, [reload]);
 
-        const notices: NoticeDraft[] = [
-            { userId: beneficiary.id, userRole: 'beneficiary', type: 'success', title: 'Application Submitted', message: `Your application #${id} was shared with ${lenders.map(l => l.name).join(', ')}.` },
-            ...lenders.map((lender): NoticeDraft => ({ userId: lender.id, userRole: 'lender', type: 'info', title: 'New Application Available', message: `Application #${id} from ${beneficiary.name} was shared with you for review.` })),
-        ];
+    useEffect(() => {
+        if (userId === null) return;
+        return appService.subscribe(refreshQuietly);
+    }, [userId, refreshQuietly]);
 
-        commit({
-            applications: [newApp, ...current.applications],
-            notifications: [...toNotifications(notices, now), ...current.notifications],
-        });
-        return newApp;
-    }, [commit]);
+    /** Runs a change, then shows the result. A failure reaches the page; a failed refresh doesn't undo a success. */
+    const perform = useCallback(async <T,>(action: () => Promise<T>): Promise<T> => {
+        const result = await action();
+        await reload().catch(() => undefined);
+        return result;
+    }, [reload]);
 
-    const acceptOffer = useCallback((offerId: string, applicationId: string, beneficiaryId: string) => {
-        const now = new Date();
-        applyTransition(workflow.acceptOffer(findApplication(applicationId), beneficiaryId, offerId, now), now);
-    }, [applyTransition, findApplication]);
+    const submitApplication = useCallback((beneficiary: BeneficiaryProfile, data: LoanApplicationFormData, lenderIds: string[]) =>
+        perform(() => appService.submitApplication(beneficiary, data, lenderIds)), [perform]);
 
-    const declineOffer = useCallback((offerId: string, applicationId: string, beneficiaryId: string) => {
-        const now = new Date();
-        applyTransition(workflow.declineOffer(findApplication(applicationId), beneficiaryId, offerId, now), now);
-    }, [applyTransition, findApplication]);
+    const acceptOffer = useCallback((offerId: string, applicationId: string, beneficiaryId: string) =>
+        perform(() => appService.acceptOffer(offerId, applicationId, beneficiaryId)), [perform]);
 
-    const uploadDocument = useCallback((applicationId: string, documentId: string, beneficiaryId: string, file: File) => {
-        const uploadedAt = new Date();
-        // Only the file's details are kept. The contents never leave the browser in this mock.
-        const uploaded = workflow.recordDocumentUpload(findApplication(applicationId), beneficiaryId, documentId, file.name, uploadedAt);
-        applyTransition({ app: uploaded, notices: [] }, uploadedAt);
+    const declineOffer = useCallback((offerId: string, applicationId: string, beneficiaryId: string) =>
+        perform(() => appService.declineOffer(offerId, applicationId, beneficiaryId)), [perform]);
 
-        const result = workflow.checkDocumentFile(file);
-        window.setTimeout(() => {
-            const now = new Date();
-            applyTransition(workflow.completeDocumentCheck(findApplication(applicationId), documentId, result, now), now);
-        }, DOCUMENT_CHECK_DELAY_MS);
-    }, [applyTransition, findApplication]);
+    const uploadDocument = useCallback((applicationId: string, documentId: string, beneficiaryId: string, file: File) =>
+        perform(() => appService.uploadDocument(applicationId, documentId, beneficiaryId, file)), [perform]);
 
-    const syncApplicantProfile = useCallback((beneficiary: BeneficiaryProfile) => {
-        const current = stateRef.current;
-        commit({
-            ...current,
-            applications: current.applications.map(app => app.beneficiaryId !== beneficiary.id ? app : {
-                ...app,
-                beneficiaryName: beneficiary.name,
-                applicantProfile: { occupation: beneficiary.occupation, city: beneficiary.city, state: beneficiary.state },
-            }),
-        });
-    }, [commit]);
+    const syncApplicantProfile = useCallback((beneficiary: BeneficiaryProfile) =>
+        perform(() => appService.syncApplicantProfile(beneficiary)), [perform]);
 
-    const updateLenderDecision = useCallback((applicationId: string, lender: LenderProfile, status: LenderAction, note: string | null) => {
-        const now = new Date();
-        applyTransition(workflow.applyLenderDecision(findApplication(applicationId), lender, status, note, now), now);
-    }, [applyTransition, findApplication]);
+    const updateLenderDecision = useCallback((applicationId: string, lender: LenderProfile, status: LenderAction, note: string | null) =>
+        perform(() => appService.updateLenderDecision(applicationId, lender, status, note)), [perform]);
 
-    const createOffer = useCallback((applicationId: string, lender: LenderProfile, data: CreateOfferFormData) => {
-        const now = new Date();
-        const taken = new Set(stateRef.current.applications.flatMap(a => a.offers.map(o => o.id)));
-        const features = (data.features ?? '').split(',').map(f => f.trim()).filter(Boolean);
-        applyTransition(workflow.makeOffer(findApplication(applicationId), lender, { ...data, features }, uniqueId('OFF', taken), now), now);
-    }, [applyTransition, findApplication]);
+    const createOffer = useCallback((applicationId: string, lender: LenderProfile, data: CreateOfferFormData) =>
+        perform(() => appService.createOffer(applicationId, lender, data)), [perform]);
 
-    const withdrawOffer = useCallback((applicationId: string, lender: LenderProfile, offerId: string) => {
-        const now = new Date();
-        applyTransition(workflow.withdrawOffer(findApplication(applicationId), lender, offerId, now), now);
-    }, [applyTransition, findApplication]);
+    const withdrawOffer = useCallback((applicationId: string, lender: LenderProfile, offerId: string) =>
+        perform(() => appService.withdrawOffer(applicationId, lender, offerId)), [perform]);
 
-    const advanceDisbursement = useCallback((applicationId: string, lender: LenderProfile) => {
-        const now = new Date();
-        applyTransition(workflow.advanceDisbursement(findApplication(applicationId), lender.id, now), now);
-    }, [applyTransition, findApplication]);
+    const advanceDisbursement = useCallback((applicationId: string, lender: LenderProfile) =>
+        perform(() => appService.advanceDisbursement(applicationId, lender)), [perform]);
 
+    // Marking as read shouldn't make anyone wait, so it updates the screen first.
     const markNotificationRead = useCallback((id: string) => {
-        const current = stateRef.current;
-        commit({ ...current, notifications: current.notifications.map(n => (n.id === id ? { ...n, read: true } : n)) });
-    }, [commit]);
+        setLoaded(current => current && { ...current, data: { ...current.data, notifications: current.data.notifications.map(n => (n.id === id ? { ...n, read: true } : n)) } });
+        appService.markNotificationRead(id).catch(() => refreshQuietly());
+    }, [refreshQuietly]);
 
-    const markAllNotificationsRead = useCallback((userId: string) => {
-        const current = stateRef.current;
-        commit({ ...current, notifications: current.notifications.map(n => (n.userId === userId ? { ...n, read: true } : n)) });
-    }, [commit]);
+    const markAllNotificationsRead = useCallback((targetUserId: string) => {
+        setLoaded(current => current && { ...current, data: { ...current.data, notifications: current.data.notifications.map(n => (n.userId === targetUserId ? { ...n, read: true } : n)) } });
+        appService.markAllNotificationsRead(targetUserId).catch(() => refreshQuietly());
+    }, [refreshQuietly]);
 
     const getApplicationsByBeneficiary = useCallback((beneficiaryId: string) =>
         applications.filter(a => a.beneficiaryId === beneficiaryId), [applications]);
 
     const getApplicationsByLender = useCallback((lenderId: string) =>
-        applications.filter(a => workflow.isSharedWithLender(a, lenderId)), [applications]);
+        applications.filter(a => isSharedWithLender(a, lenderId)), [applications]);
 
     const getBeneficiaryApplication = useCallback((applicationId: string, beneficiaryId: string) =>
         applications.find(a => a.id === applicationId && a.beneficiaryId === beneficiaryId), [applications]);
 
     const getLenderApplication = useCallback((applicationId: string, lenderId: string) =>
-        applications.find(a => a.id === applicationId && workflow.isSharedWithLender(a, lenderId)), [applications]);
+        applications.find(a => a.id === applicationId && isSharedWithLender(a, lenderId)), [applications]);
 
     const getOffersByLender = useCallback((lenderId: string) =>
         applications.flatMap(a => a.offers.filter(o => o.lender_id === lenderId)), [applications]);
 
-    const getNotificationsByUser = useCallback((userId: string) =>
-        notifications.filter(n => n.userId === userId), [notifications]);
+    const getNotificationsByUser = useCallback((targetUserId: string) =>
+        notifications.filter(n => n.userId === targetUserId), [notifications]);
 
-    const resetDemoData = useCallback(() => {
-        removeKey(APPLICATIONS_KEY);
-        removeKey(NOTIFICATIONS_KEY);
-        const fresh = { applications: MOCK_APPLICATIONS, notifications: MOCK_NOTIFICATIONS };
-        stateRef.current = fresh;
-        setState(fresh);
-    }, []);
+    const resetDemoData = useCallback(() => perform(() => appService.resetDemoData()), [perform]);
 
     return (
         <AppContext.Provider value={{
-            applications, notifications,
+            applications, notifications, loading, loadError, retryLoad: firstLoad,
+            listLenders: appService.listLenders,
             submitApplication, acceptOffer, declineOffer, uploadDocument, syncApplicantProfile,
             updateLenderDecision, createOffer, withdrawOffer, advanceDisbursement,
             markNotificationRead, markAllNotificationsRead,

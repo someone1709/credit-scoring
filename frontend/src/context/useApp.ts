@@ -8,24 +8,30 @@ import type {
     LoanOffer,
     Notification,
 } from '@/types';
+import type { LenderOption } from '@/types/appService';
 import type { LenderAction } from '@/lib/workflow';
 
 export interface AppContextValue {
     applications: LoanApplication[];
     notifications: Notification[];
+    /** True while the signed-in user's data is first being fetched. */
+    loading: boolean;
+    loadError: string | null;
+    retryLoad: () => void;
+    listLenders: () => Promise<LenderOption[]>;
 
     // Beneficiary actions
-    submitApplication: (beneficiary: BeneficiaryProfile, data: LoanApplicationFormData, lenders: LenderProfile[]) => LoanApplication;
-    acceptOffer: (offerId: string, applicationId: string, beneficiaryId: string) => void;
-    declineOffer: (offerId: string, applicationId: string, beneficiaryId: string) => void;
-    uploadDocument: (applicationId: string, documentId: string, beneficiaryId: string, file: File) => void;
-    syncApplicantProfile: (beneficiary: BeneficiaryProfile) => void;
+    submitApplication: (beneficiary: BeneficiaryProfile, data: LoanApplicationFormData, lenderIds: string[]) => Promise<LoanApplication>;
+    acceptOffer: (offerId: string, applicationId: string, beneficiaryId: string) => Promise<void>;
+    declineOffer: (offerId: string, applicationId: string, beneficiaryId: string) => Promise<void>;
+    uploadDocument: (applicationId: string, documentId: string, beneficiaryId: string, file: File) => Promise<void>;
+    syncApplicantProfile: (beneficiary: BeneficiaryProfile) => Promise<void>;
 
     // Lender actions
-    updateLenderDecision: (applicationId: string, lender: LenderProfile, status: LenderAction, note: string | null) => void;
-    createOffer: (applicationId: string, lender: LenderProfile, data: CreateOfferFormData) => void;
-    withdrawOffer: (applicationId: string, lender: LenderProfile, offerId: string) => void;
-    advanceDisbursement: (applicationId: string, lender: LenderProfile) => void;
+    updateLenderDecision: (applicationId: string, lender: LenderProfile, status: LenderAction, note: string | null) => Promise<void>;
+    createOffer: (applicationId: string, lender: LenderProfile, data: CreateOfferFormData) => Promise<void>;
+    withdrawOffer: (applicationId: string, lender: LenderProfile, offerId: string) => Promise<void>;
+    advanceDisbursement: (applicationId: string, lender: LenderProfile) => Promise<void>;
 
     // Notifications
     markNotificationRead: (id: string) => void;
@@ -39,7 +45,7 @@ export interface AppContextValue {
     getOffersByLender: (lenderId: string) => LoanOffer[];
     getNotificationsByUser: (userId: string) => Notification[];
 
-    resetDemoData: () => void;
+    resetDemoData: () => Promise<void>;
 }
 
 export const AppContext = createContext<AppContextValue | null>(null);

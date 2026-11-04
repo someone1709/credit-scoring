@@ -72,7 +72,7 @@ export default function Profile() {
         try {
             const updated = await updateBeneficiaryProfile(data);
             if (updated.role === 'beneficiary') {
-                syncApplicantProfile(updated.profile);
+                await syncApplicantProfile(updated.profile);
                 reset({ ...data, email: updated.profile.email });
             }
             setSaved(true);

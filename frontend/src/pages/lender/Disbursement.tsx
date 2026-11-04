@@ -11,13 +11,18 @@ export default function LenderDisbursement() {
     const { getOffersByLender, getLenderApplication, advanceDisbursement } = useApp();
     const accepted = getOffersByLender(lender.id).filter(o => o.status === 'ACCEPTED');
     const [error, setError] = useState<string | null>(null);
+    // A double click must not skip a step.
+    const [busy, setBusy] = useState(false);
 
-    const advance = (applicationId: string) => {
+    const advance = async (applicationId: string) => {
         setError(null);
+        setBusy(true);
         try {
-            advanceDisbursement(applicationId, lender);
+            await advanceDisbursement(applicationId, lender);
         } catch (e) {
             setError(e instanceof Error ? e.message : 'Something went wrong. Please try again.');
+        } finally {
+            setBusy(false);
         }
     };
 
@@ -56,8 +61,9 @@ export default function LenderDisbursement() {
                                 {steps.length > 0 && <DisbursementStepper steps={steps} />}
                                 {currentStep ? (
                                     <button
-                                        onClick={() => advance(o.applicationId)}
-                                        className="w-full px-4 py-2.5 bg-emerald-500 hover:bg-emerald-600 text-white rounded-lg text-sm font-semibold transition-colors"
+                                        onClick={() => void advance(o.applicationId)}
+                                        disabled={busy}
+                                        className="w-full px-4 py-2.5 bg-emerald-500 hover:bg-emerald-600 disabled:opacity-60 text-white rounded-lg text-sm font-semibold transition-colors"
                                     >
                                         Mark “{currentStep.label}” as done
                                     </button>
