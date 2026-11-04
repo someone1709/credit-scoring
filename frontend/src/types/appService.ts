@@ -5,6 +5,7 @@ import type {
     LoanApplication,
     LoanApplicationFormData,
     Notification,
+    UserRole,
 } from './index';
 import type { AuthUser } from './auth';
 import type { LenderAction } from '@/lib/workflow';
@@ -26,6 +27,8 @@ export interface AppDataService {
     acceptOffer(offerId: string, applicationId: string, beneficiaryId: string): Promise<void>;
     declineOffer(offerId: string, applicationId: string, beneficiaryId: string): Promise<void>;
     uploadDocument(applicationId: string, documentId: string, beneficiaryId: string, file: File): Promise<void>;
+    /** The uploaded file, for its owner or a lender it was shared with. */
+    fetchDocumentFile(applicationId: string, documentId: string, role: UserRole): Promise<Blob>;
     /** The backend reads the profile live, so only the mock has a copy to update. */
     syncApplicantProfile(beneficiary: BeneficiaryProfile): Promise<void>;
 

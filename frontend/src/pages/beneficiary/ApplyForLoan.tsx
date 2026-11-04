@@ -316,7 +316,7 @@ export default function ApplyForLoan() {
                             <div>
                                 <label className="flex items-start gap-2.5 text-sm text-slate-300 cursor-pointer">
                                     <input type="checkbox" {...register('consent')} className="mt-0.5 w-4 h-4 flex-shrink-0 accent-emerald-500" />
-                                    <span>I consent to sharing this application, my financial details and my occupation and location with the lenders selected above. My email, phone number and address are not shared.</span>
+                                    <span>I consent to sharing this application, my financial details, any documents I upload, and my occupation and location with the lenders selected above. My email, phone number and address are not shared, unless they appear in a document I upload.</span>
                                 </label>
                                 {errors.consent?.message && <p className="mt-1 text-xs text-red-400">{errors.consent.message}</p>}
                             </div>

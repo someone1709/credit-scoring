@@ -3,16 +3,23 @@ import { Link } from 'react-router-dom';
 import { useBeneficiary } from '@/context/useAuth';
 import { useApp } from '@/context/useApp';
 import { ActionError, Card, EmptyState, DemoDisclaimer } from '@/components/shared/UI';
+import { ViewDocumentButton } from '@/components/shared/DocumentViewer';
+import { useAuth } from '@/context/useAuth';
 import { StatusBadge } from '@/components/shared/StatusBadge';
 import { canUploadDocuments } from '@/lib/workflow';
 import { Upload, FileText, ExternalLink } from 'lucide-react';
+import type { Document } from '@/types';
 
 export default function Documents() {
     const beneficiary = useBeneficiary();
     const { getApplicationsByBeneficiary, uploadDocument } = useApp();
     const apps = getApplicationsByBeneficiary(beneficiary.id);
 
+    const { isMockMode } = useAuth();
     const [error, setError] = useState<string | null>(null);
+
+    // Passed before files were kept, so a lender has nothing to open yet.
+    const needsReupload = (doc: Document) => !isMockMode && doc.verification_status === 'CHECKS_PASSED' && !doc.fileAvailable;
 
     const handleUpload = async (docId: string, appId: string, file: File) => {
         setError(null);
@@ -82,9 +89,10 @@ export default function Documents() {
                                     </div>
                                     <div className="flex items-center gap-3 flex-shrink-0">
                                         <StatusBadge status={doc.verification_status} size="sm" />
-                                        {uploadsOpen && (doc.verification_status === 'NOT_PROVIDED' || doc.verification_status === 'CHECKS_FAILED') ? (
+                                        {doc.fileAvailable && <ViewDocumentButton applicationId={app.id} document={doc} role="beneficiary" />}
+                                        {uploadsOpen && (doc.verification_status === 'NOT_PROVIDED' || doc.verification_status === 'CHECKS_FAILED' || needsReupload(doc)) ? (
                                             <label className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-500/15 hover:bg-blue-500/25 border border-blue-500/30 text-blue-400 rounded-lg text-xs font-medium cursor-pointer transition-colors">
-                                                <Upload size={12} /> {doc.verification_status === 'CHECKS_FAILED' ? 'Try Again' : 'Upload'}
+                                                <Upload size={12} /> {doc.verification_status === 'CHECKS_FAILED' ? 'Try Again' : needsReupload(doc) ? 'Upload Again' : 'Upload'}
                                                 <input
                                                     type="file"
                                                     className="sr-only"
@@ -105,7 +113,7 @@ export default function Documents() {
                         </div>
 
                         <p className="mt-3 text-xs text-slate-600">
-                            Note: Uploading a document does not establish its authenticity. Checks Passed means only that the file type and size checks passed. No government verification is integrated. In this prototype only the file's name is kept.
+                            Note: Uploading a document does not establish its authenticity. File OK means only that the file's type and size passed. Nobody has confirmed it's genuine, and no government verification is integrated. {isMockMode ? "In demo mode only the file's name is kept." : 'Files are stored encrypted. Only you and the lenders you chose can open them.'}
                         </p>
                     </Card>
                 );

@@ -6,6 +6,7 @@ import java.util.List;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -49,6 +50,11 @@ class BeneficiaryApplicationController {
     @PostMapping("/{id}/offers/{offerId}/decline")
     ApplicationDto decline(@AuthenticationPrincipal Jwt jwt, @PathVariable String id, @PathVariable String offerId) {
         return applications.declineOffer(jwt.getSubject(), id, offerId);
+    }
+
+    @GetMapping("/{id}/documents/{documentId}/file")
+    ResponseEntity<byte[]> file(@AuthenticationPrincipal Jwt jwt, @PathVariable String id, @PathVariable String documentId) {
+        return DocumentResponses.of(applications.documentForBeneficiary(jwt.getSubject(), id, documentId));
     }
 
     @PostMapping(path = "/{id}/documents/{documentId}", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)

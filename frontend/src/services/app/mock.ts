@@ -169,6 +169,10 @@ export const mockAppService: AppDataService = {
         }, DOCUMENT_CHECK_DELAY_MS);
     },
 
+    async fetchDocumentFile() {
+        throw new Error("Files aren't kept in demo mode.");
+    },
+
     async syncApplicantProfile(beneficiary) {
         const snapshot = current();
         commit({

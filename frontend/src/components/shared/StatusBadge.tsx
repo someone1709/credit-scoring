@@ -36,7 +36,8 @@ const variantMap: Record<string, string> = {
 const labelMap: Record<string, string> = {
     DEMO_UNVERIFIED: 'Demo Unverified',
     DOCUMENT_UPLOADED: 'Uploaded',
-    CHECKS_PASSED: 'Checks Passed',
+    // The contract's value stays CHECKS_PASSED. This wording stops anyone reading it as proof.
+    CHECKS_PASSED: 'File OK, Not Verified',
     CHECKS_FAILED: 'Checks Failed',
     NOT_PROVIDED: 'Not Provided',
     OFFERS_AVAILABLE: 'Offers Available',

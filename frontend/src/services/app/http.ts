@@ -32,6 +32,7 @@ interface DocumentDto {
     uploaded_at: string | null;
     verification_status: VerificationStatus;
     check_note: string | null;
+    file_available: boolean;
 }
 
 interface DecisionDto {
@@ -116,6 +117,7 @@ function toDocument(dto: DocumentDto): Document {
         uploadedAt: dto.uploaded_at,
         verification_status: dto.verification_status,
         checkNote: dto.check_note,
+        fileAvailable: dto.file_available,
     };
 }
 
@@ -247,6 +249,17 @@ export const httpAppService: AppDataService = {
         await call(() => http.post(`/applications/${applicationId}/documents/${documentId}`, form, {
             headers: { 'Content-Type': 'multipart/form-data' },
         }));
+    },
+
+    async fetchDocumentFile(applicationId, documentId, role) {
+        const base = role === 'lender' ? '/lender/applications' : '/applications';
+        try {
+            const response = await http.get<Blob>(`${base}/${applicationId}/documents/${documentId}/file`, { responseType: 'blob' });
+            return response.data;
+        } catch {
+            // The error body is a Blob here, so the server's own message can't be read back.
+            throw new Error("This file isn't available.");
+        }
     },
 
     async syncApplicantProfile() {

@@ -58,6 +58,8 @@ app:
     log-links: ${APP_LOG_RESET_LINKS:false}
   cors:
     allowed-origins: ${APP_CORS_ORIGINS:http://localhost:5173,http://localhost:5174,http://localhost:5175}
+  documents:
+    encryption-key: ${APP_DOCUMENT_KEY}
   ml:
     # Where the FastAPI service runs. Leave empty to use the labelled rule-based scoring.
     url: ${ML_SERVICE_URL:}

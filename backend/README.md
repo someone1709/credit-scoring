@@ -94,12 +94,14 @@ All routes start with `/api/v1`. JSON is snake_case. `repayment_history` values 
 | `POST /applications/{id}/offers/{offerId}/accept` | Accept one offer. The others are declined |
 | `POST /applications/{id}/offers/{offerId}/decline` | Decline an offer |
 | `POST /applications/{id}/documents/{documentId}` | Upload as multipart field `file` |
+| `GET /applications/{id}/documents/{documentId}/file` | Open your own uploaded file |
 
 **Lender only**
 
 | Route | Purpose |
 |---|---|
 | `GET /lender/applications`, `GET /lender/applications/{id}` | Applications shared with you |
+| `GET /lender/applications/{id}/documents/{documentId}/file` | Open a file shared with you, until another lender's offer is accepted |
 | `POST /lender/applications/{id}/decision` | `status` (`UNDER_REVIEW`, `INFO_REQUESTED` or `REJECTED`) and `note` |
 | `POST /lender/applications/{id}/offers` | `amount, interest_rate, tenure_months, features` |
 | `POST /lender/applications/{id}/offers/{offerId}/withdraw` | Withdraw your live offer |
@@ -117,15 +119,17 @@ All routes start with `/api/v1`. JSON is snake_case. `repayment_history` values 
 - **Independent decisions:** one lender's rejection changes only that lender's decision. The application is `REJECTED` only when every chosen lender has rejected it.
 - **One accepted offer:** each change locks the application row, and a unique database index blocks a second accepted offer even if the code were wrong.
 - **No fabricated results:** `probability_of_default` is only ever set by the model, and `model_confidence` stays null. No repayment history adds no risk.
-- **Documents:** type, size and the file's actual contents are checked. Only the name and result are stored, and the file is discarded. A passed check doesn't prove a document is genuine.
+- **Documents:** type, size and the file's opening bytes are checked. A passed check doesn't prove a document is genuine, so lenders open the file and judge it themselves.
+- **Who can open a file:** only its owner and the lenders they chose, and a lender loses access once another lender's offer is accepted. Each time a lender opens a file, the server logs which lender and document. Files that fail their checks are never kept.
 
 ## Security
 
 - Passwords are stored with BCrypt, and refresh and reset tokens as SHA-256 hashes.
+- Documents are encrypted with AES-256-GCM before they reach the database, using `APP_DOCUMENT_KEY`. **Back that key up**, because stored documents can't be read without it. Files are always sent as downloads, with the type set by the server, so a browser can't run one as a page.
 - Access tokens last 15 minutes and stay in the browser's memory. The refresh token is in an `httpOnly`, `SameSite=Lax` cookie and is replaced on every use. An old token coming back later ends all of that user's sessions.
 - Set `APP_COOKIE_SECURE=true` when serving over HTTPS.
 
-**Not included yet:** real email (reset links are only printed to this server's log, and only when `APP_LOG_RESET_LINKS=true`), limits on repeated sign-in attempts, and checks on lender licenses. Add these before any real use.
+**Not included yet:** real email (reset links are only printed to this server's log, and only when `APP_LOG_RESET_LINKS=true`), limits on repeated sign-in attempts, checks on lender licenses, automatic deletion of old documents, and a way for applicants to withdraw consent. Add these before any real use.
 
 ## The ML service
 

@@ -50,7 +50,7 @@ public final class ApplicationDtos {
     public record ApplicantProfileDto(String occupation, String city, String state) {}
 
     public record DocumentDto(String id, String applicationId, String beneficiaryId, Enums.DocumentType type, String label, String filename,
-                              Instant uploadedAt, AssessmentContract.VerificationStatus verificationStatus, String checkNote) {}
+                              Instant uploadedAt, AssessmentContract.VerificationStatus verificationStatus, String checkNote, boolean fileAvailable) {}
 
     public record DecisionDto(String lenderId, String lenderName, String applicationId, Enums.DecisionStatus status, Instant lastUpdated, String note) {}
 

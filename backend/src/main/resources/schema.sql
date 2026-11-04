@@ -119,7 +119,7 @@ CREATE TABLE IF NOT EXISTS loan_offers (
     CONSTRAINT fk_offer_lender FOREIGN KEY (lender_id) REFERENCES users (id)
 );
 
--- Metadata only. Uploaded file contents are checked, then discarded.
+-- What's known about each document slot. The file itself is in document_files.
 CREATE TABLE IF NOT EXISTS documents (
     id                  VARCHAR(30)  NOT NULL PRIMARY KEY,
     application_id      VARCHAR(20)  NOT NULL,
@@ -154,4 +154,12 @@ CREATE TABLE IF NOT EXISTS notifications (
     created_at DATETIME(6)  NOT NULL,
     INDEX idx_notification_user (user_id, created_at),
     CONSTRAINT fk_notification_user FOREIGN KEY (user_id) REFERENCES users (id)
+);
+
+-- Uploaded files that passed their checks, encrypted. Kept apart from documents so reading a list never loads a file.
+CREATE TABLE IF NOT EXISTS document_files (
+    document_id  VARCHAR(30) NOT NULL PRIMARY KEY,
+    content_type VARCHAR(40) NOT NULL,
+    content      LONGBLOB    NOT NULL,
+    CONSTRAINT fk_file_document FOREIGN KEY (document_id) REFERENCES documents (id)
 );

@@ -12,15 +12,24 @@ final class DocumentChecks {
     private static final byte[] JPEG = {(byte) 0xFF, (byte) 0xD8, (byte) 0xFF};
     private static final byte[] PNG = {(byte) 0x89, 'P', 'N', 'G', '\r', '\n', 0x1A, '\n'};
     private static final Map<String, byte[]> SIGNATURES = Map.of("pdf", PDF, "jpg", JPEG, "jpeg", JPEG, "png", PNG);
+    private static final Map<String, String> CONTENT_TYPES = Map.of("pdf", "application/pdf", "jpg", "image/jpeg", "jpeg", "image/jpeg", "png", "image/png");
 
     record Result(boolean passed, String note) {}
 
     private DocumentChecks() {}
 
-    static Result check(String filename, long size, byte[] firstBytes) {
+    private static String extensionOf(String filename) {
         int dot = filename.lastIndexOf('.');
-        String extension = dot < 0 ? "" : filename.substring(dot + 1).toLowerCase(Locale.ROOT);
-        byte[] signature = SIGNATURES.get(extension);
+        return dot < 0 ? "" : filename.substring(dot + 1).toLowerCase(Locale.ROOT);
+    }
+
+    /** Set from the checked file, never from what the uploader claimed. */
+    static String contentType(String filename) {
+        return CONTENT_TYPES.get(extensionOf(filename));
+    }
+
+    static Result check(String filename, long size, byte[] firstBytes) {
+        byte[] signature = SIGNATURES.get(extensionOf(filename));
 
         if (signature == null) return new Result(false, "File type not accepted. Upload a PDF, JPG or PNG.");
         if (size == 0) return new Result(false, "The file is empty.");

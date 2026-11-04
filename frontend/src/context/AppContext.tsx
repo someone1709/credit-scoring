@@ -136,6 +136,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         <AppContext.Provider value={{
             applications, notifications, loading, loadError, retryLoad: firstLoad,
             listLenders: appService.listLenders,
+            fetchDocumentFile: appService.fetchDocumentFile,
             submitApplication, acceptOffer, declineOffer, uploadDocument, syncApplicantProfile,
             updateLenderDecision, createOffer, withdrawOffer, advanceDisbursement,
             markNotificationRead, markAllNotificationsRead,

@@ -7,6 +7,7 @@ import type {
     LoanApplicationFormData,
     LoanOffer,
     Notification,
+    UserRole,
 } from '@/types';
 import type { LenderOption } from '@/types/appService';
 import type { LenderAction } from '@/lib/workflow';
@@ -19,6 +20,7 @@ export interface AppContextValue {
     loadError: string | null;
     retryLoad: () => void;
     listLenders: () => Promise<LenderOption[]>;
+    fetchDocumentFile: (applicationId: string, documentId: string, role: UserRole) => Promise<Blob>;
 
     // Beneficiary actions
     submitApplication: (beneficiary: BeneficiaryProfile, data: LoanApplicationFormData, lenderIds: string[]) => Promise<LoanApplication>;

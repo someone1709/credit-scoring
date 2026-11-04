@@ -8,6 +8,7 @@ import { useApp } from '@/context/useApp';
 import { ActionError, AssessmentNote, Card, InfoRow, DemoDisclaimer } from '@/components/shared/UI';
 import { StatusBadge } from '@/components/shared/StatusBadge';
 import { ScoreGauge } from '@/components/shared/ScoreGauge';
+import { ViewDocumentButton } from '@/components/shared/DocumentViewer';
 import { calculateEmi, dtiPercent, expenseRatioPercent, monthlySurplus } from '@/lib/finance';
 import { getAcceptedOffer, getLiveOffer, isClosedToDecisions, type LenderAction } from '@/lib/workflow';
 import { ArrowLeft, Loader2, CheckCircle, Lock } from 'lucide-react';
@@ -218,12 +219,15 @@ export default function ApplicationReview() {
                                 <p className="text-sm font-medium text-white">{doc.label}</p>
                                 {doc.checkNote && <p className="text-xs text-slate-500 mt-0.5">{doc.checkNote}</p>}
                             </div>
-                            <StatusBadge status={doc.verification_status} size="sm" className="flex-shrink-0" />
+                            <div className="flex items-center gap-2 flex-shrink-0">
+                                <StatusBadge status={doc.verification_status} size="sm" />
+                                {doc.fileAvailable && <ViewDocumentButton applicationId={app.id} document={doc} role="lender" />}
+                            </div>
                         </div>
                     ))}
                 </div>
                 <p className="text-xs text-slate-600 mt-3">
-                    Checks Passed means only that the file type and size checks passed. No government verification is integrated. Documents are demo only.
+                    File OK means only that the file's type and size passed. Nobody has confirmed it's genuine, and no government verification is integrated. Open each document and judge it yourself.
                 </p>
             </Card>
 

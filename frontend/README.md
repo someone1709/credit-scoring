@@ -81,7 +81,7 @@ Screens only use two interfaces, `AuthService` (`src/types/auth.ts`) and `AppDat
 |---|---|
 | Sign-in, demo mode only | Accounts live in this browser with salted password hashes. This is not secure, so don't use a real password. Password-reset email isn't sent; a labelled link appears on screen instead |
 | Credit assessment | In demo mode, a rule-based points system. In live mode, a model trained on synthetic data and not validated on real borrowers, or the same rules if the ML service is down. Each result shows which. `model_confidence` is always shown as Unavailable |
-| Document checks | File type and size only. Only the file's name is kept. In demo mode the file never leaves the browser; in live mode the backend also checks its contents, then discards it |
+| Document checks | File type and size only, so a passed file isn't proof of anything and shows as "File OK, Not Verified". In demo mode the file never leaves the browser and can't be opened. In live mode the backend also checks its opening bytes, stores it encrypted, and lets the owner and chosen lenders open it |
 | Disbursement and repayments | The lender moves the steps by hand, and schedules are calculated. No money moves and no payments are recorded |
 
 ## Assumptions to confirm

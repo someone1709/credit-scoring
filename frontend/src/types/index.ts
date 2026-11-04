@@ -123,6 +123,8 @@ export interface Document {
     uploadedAt: string | null;
     verification_status: VerificationStatus;
     checkNote: string | null;
+    // True when a lender or the owner can open the file. Demo mode never keeps files.
+    fileAvailable?: boolean;
 }
 
 export interface LenderDecision {

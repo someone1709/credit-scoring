@@ -12,6 +12,8 @@ spring:
       ddl-auto: create-drop
 
 app:
+  documents:
+    encryption-key: dGVzdC1vbmx5LWtleS10ZXN0LW9ubHkta2V5LTEyMzQ=
   ml:
     url: ""
   jwt:

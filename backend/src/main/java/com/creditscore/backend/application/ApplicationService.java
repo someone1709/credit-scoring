@@ -33,6 +33,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Set;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -42,12 +43,14 @@ import org.springframework.web.multipart.MultipartFile;
  * The lending workflow. These rules match frontend/src/lib/workflow.ts, and the server is what enforces them:
  * one lender can't affect another, and nobody reaches data that isn't theirs.
  */
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class ApplicationService {
 
     private static final int OFFER_VALIDITY_DAYS = 30;
     private static final String NOT_FOUND = "This application doesn't exist or isn't available to you.";
+    private static final String FILE_NOT_FOUND = "This file isn't available.";
     private static final Locale INDIA = Locale.of("en", "IN");
     private static final List<String> DISBURSEMENT_LABELS = List.of(
             "Offer Accepted", "Agreement Signed", "Verification Complete (Simulated)", "Disbursement Initiated", "Amount Credited (Simulated)");
@@ -68,6 +71,11 @@ public class ApplicationService {
     private final AssessmentProvider assessmentProvider;
     private final NotificationService notifications;
     private final ApplicationMapper mapper;
+    private final DocumentFileRepository documentFiles;
+    private final DocumentCipher documentCipher;
+
+    /** A decrypted document, on its way to someone allowed to see it. */
+    public record FileDownload(String filename, String contentType, byte[] content) {}
 
     // ============================================================
     // Derived state
@@ -298,7 +306,8 @@ public class ApplicationService {
                 .filter(candidate -> candidate.getId().equals(documentId))
                 .findFirst()
                 .orElseThrow(() -> ApiException.notFound("This document could not be found."));
-        if (document.getVerificationStatus() == VerificationStatus.CHECKS_PASSED) {
+        // Older uploads passed before files were kept, so those can be uploaded again.
+        if (document.getVerificationStatus() == VerificationStatus.CHECKS_PASSED && documentFiles.existsById(document.getId())) {
             throw ApiException.conflict("This document has already passed its checks.");
         }
 
@@ -310,6 +319,14 @@ public class ApplicationService {
         document.setUploadedAt(now);
         document.setVerificationStatus(result.passed() ? VerificationStatus.CHECKS_PASSED : VerificationStatus.CHECKS_FAILED);
         document.setCheckNote(result.note());
+        // Only a file that passed is kept, so nothing else ever reaches a lender.
+        if (result.passed()) {
+            DocumentFile stored = new DocumentFile();
+            stored.setDocumentId(document.getId());
+            stored.setContentType(DocumentChecks.contentType(filename));
+            stored.setContent(documentCipher.encrypt(contentsOf(file), document.getId()));
+            documentFiles.save(stored);
+        }
         if (app.getAssessment() != null) app.getAssessment().setVerificationStatus(deriveVerification(app.getDocuments()));
         app.setLastUpdatedAt(now);
 
@@ -321,6 +338,43 @@ public class ApplicationService {
                             document.getLabel() + " was uploaded for application #" + app.getId() + ", where you asked for more information."));
         }
         return mapper.forBeneficiary(app);
+    }
+
+    private static byte[] contentsOf(MultipartFile file) {
+        try {
+            return file.getBytes();
+        } catch (IOException e) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "BAD_REQUEST", "The file could not be read.");
+        }
+    }
+
+    @Transactional(readOnly = true)
+    public FileDownload documentForBeneficiary(String beneficiaryId, String applicationId, String documentId) {
+        LoanApplication app = applications.findById(applicationId)
+                .filter(candidate -> candidate.getBeneficiaryId().equals(beneficiaryId))
+                .orElseThrow(() -> ApiException.notFound(FILE_NOT_FOUND));
+        return readFile(app, documentId);
+    }
+
+    /** A lender whose offer didn't win loses access, because they no longer have a reason to see it. */
+    @Transactional(readOnly = true)
+    public FileDownload documentForLender(String lenderId, String applicationId, String documentId) {
+        LoanApplication app = applications.findById(applicationId)
+                .filter(candidate -> candidate.decisionOf(lenderId).isPresent())
+                .filter(candidate -> candidate.acceptedOffer().map(offer -> offer.getLenderId().equals(lenderId)).orElse(true))
+                .orElseThrow(() -> ApiException.notFound(FILE_NOT_FOUND));
+        FileDownload download = readFile(app, documentId);
+        log.info("Lender {} opened document {}", lenderId, documentId);
+        return download;
+    }
+
+    private FileDownload readFile(LoanApplication app, String documentId) {
+        ApplicationDocument document = app.getDocuments().stream()
+                .filter(candidate -> candidate.getId().equals(documentId))
+                .findFirst()
+                .orElseThrow(() -> ApiException.notFound(FILE_NOT_FOUND));
+        DocumentFile stored = documentFiles.findById(documentId).orElseThrow(() -> ApiException.notFound(FILE_NOT_FOUND));
+        return new FileDownload(document.getFilename(), stored.getContentType(), documentCipher.decrypt(stored.getContent(), documentId));
     }
 
     private static byte[] firstBytes(MultipartFile file) {
