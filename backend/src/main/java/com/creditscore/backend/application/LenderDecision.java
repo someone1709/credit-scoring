@@ -41,4 +41,10 @@ public class LenderDecision {
 
     @Column(name = "last_updated", nullable = false)
     private Instant lastUpdated;
+
+    @Column(name = "applicant_reply")
+    private String applicantReply;
+
+    @Column(name = "applicant_reply_at")
+    private Instant applicantReplyAt;
 }

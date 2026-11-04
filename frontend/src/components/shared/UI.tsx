@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import clsx from 'clsx';
 
 interface CardProps {
@@ -122,6 +123,63 @@ export function AssessmentNote({ method, audience }: { method: 'SHAP' | 'RULE_BA
         ? 'This supports your judgement, and the decision is yours.'
         : "It isn't a lending decision. Lenders make their own decisions.";
     return <p className="text-xs text-slate-600 mt-3">{source} {decision}</p>;
+}
+
+/** For something that can't be undone: asks once more, right where the button was. */
+export function ConfirmButton({ label, question, confirmLabel, disabled = false, onConfirm }: {
+    label: string;
+    question: string;
+    confirmLabel: string;
+    disabled?: boolean;
+    onConfirm: () => Promise<void>;
+}) {
+    const [asking, setAsking] = useState(false);
+    const [working, setWorking] = useState(false);
+
+    if (!asking) {
+        return (
+            <button
+                type="button"
+                disabled={disabled}
+                onClick={() => setAsking(true)}
+                className="px-3 py-1.5 border border-red-500/30 text-red-400 hover:bg-red-500/10 disabled:opacity-50 rounded-lg text-xs font-medium transition-colors"
+            >
+                {label}
+            </button>
+        );
+    }
+
+    const confirm = async () => {
+        setWorking(true);
+        try {
+            await onConfirm();
+        } finally {
+            setWorking(false);
+            setAsking(false);
+        }
+    };
+
+    return (
+        <div className="flex flex-wrap items-center gap-2 text-xs">
+            <span className="text-slate-300">{question}</span>
+            <button
+                type="button"
+                disabled={working}
+                onClick={() => void confirm()}
+                className="px-3 py-1.5 bg-red-500 hover:bg-red-600 disabled:opacity-50 text-white rounded-lg font-semibold transition-colors"
+            >
+                {working ? 'Working...' : confirmLabel}
+            </button>
+            <button
+                type="button"
+                disabled={working}
+                onClick={() => setAsking(false)}
+                className="px-3 py-1.5 border border-[#30363d] text-slate-400 hover:text-white rounded-lg transition-colors"
+            >
+                Cancel
+            </button>
+        </div>
+    );
 }
 
 /** Shown when a page's action fails, such as accepting an offer that has just expired. */

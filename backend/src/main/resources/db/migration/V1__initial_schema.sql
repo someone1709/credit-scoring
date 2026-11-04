@@ -1,4 +1,5 @@
--- Hibernate only validates this schema; it never changes it. Statements are safe to re-run.
+-- The original schema. Never edit a migration that has run: add a new V3__, V4__ and so on instead.
+-- Hibernate only validates the tables; these scripts are the one thing that changes them.
 
 CREATE TABLE IF NOT EXISTS users (
     id            VARCHAR(20)  NOT NULL PRIMARY KEY,

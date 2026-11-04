@@ -2,17 +2,17 @@ import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useBeneficiary } from '@/context/useAuth';
 import { useApp } from '@/context/useApp';
-import { ActionError, Card, EmptyState, DemoDisclaimer } from '@/components/shared/UI';
+import { ActionError, Card, ConfirmButton, EmptyState, DemoDisclaimer } from '@/components/shared/UI';
 import { ViewDocumentButton } from '@/components/shared/DocumentViewer';
 import { useAuth } from '@/context/useAuth';
 import { StatusBadge } from '@/components/shared/StatusBadge';
-import { canUploadDocuments } from '@/lib/workflow';
+import { canDeleteDocument, canUploadDocuments } from '@/lib/workflow';
 import { Upload, FileText, ExternalLink } from 'lucide-react';
 import type { Document } from '@/types';
 
 export default function Documents() {
     const beneficiary = useBeneficiary();
-    const { getApplicationsByBeneficiary, uploadDocument } = useApp();
+    const { getApplicationsByBeneficiary, uploadDocument, deleteDocument } = useApp();
     const apps = getApplicationsByBeneficiary(beneficiary.id);
 
     const { isMockMode } = useAuth();
@@ -27,6 +27,15 @@ export default function Documents() {
             await uploadDocument(appId, docId, beneficiary.id, file);
         } catch (e) {
             setError(e instanceof Error ? e.message : 'The upload failed. Please try again.');
+        }
+    };
+
+    const handleDelete = async (docId: string, appId: string) => {
+        setError(null);
+        try {
+            await deleteDocument(appId, docId, beneficiary.id);
+        } catch (e) {
+            setError(e instanceof Error ? e.message : "The document couldn't be deleted. Please try again.");
         }
     };
 
@@ -72,48 +81,60 @@ export default function Documents() {
                         </div>
                         <div className="space-y-3">
                             {docs.map(doc => (
-                                <div key={doc.id} className="flex flex-col sm:flex-row sm:items-center justify-between p-3 bg-[#0d1117] rounded-lg border border-[#30363d] gap-3 sm:gap-4">
-                                    <div className="flex items-center gap-3 min-w-0">
-                                        <div className="w-8 h-8 rounded-lg bg-[#1c2333] flex items-center justify-center flex-shrink-0">
-                                            <FileText size={14} className="text-slate-400" />
+                                <div key={doc.id} className="p-3 bg-[#0d1117] rounded-lg border border-[#30363d] space-y-2">
+                                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 sm:gap-4">
+                                        <div className="flex items-center gap-3 min-w-0">
+                                            <div className="w-8 h-8 rounded-lg bg-[#1c2333] flex items-center justify-center flex-shrink-0">
+                                                <FileText size={14} className="text-slate-400" />
+                                            </div>
+                                            <div className="min-w-0">
+                                                <p className="text-sm font-medium text-white">{doc.label}</p>
+                                                <p className="text-xs text-slate-500 truncate">
+                                                    {doc.filename ? doc.filename : 'Not uploaded'}
+                                                </p>
+                                                {doc.checkNote && (
+                                                    <p className={`text-xs mt-0.5 ${doc.verification_status === 'CHECKS_FAILED' ? 'text-red-400' : 'text-slate-600'}`}>{doc.checkNote}</p>
+                                                )}
+                                            </div>
                                         </div>
-                                        <div className="min-w-0">
-                                            <p className="text-sm font-medium text-white">{doc.label}</p>
-                                            <p className="text-xs text-slate-500 truncate">
-                                                {doc.filename ? doc.filename : 'Not uploaded'}
-                                            </p>
-                                            {doc.checkNote && (
-                                                <p className={`text-xs mt-0.5 ${doc.verification_status === 'CHECKS_FAILED' ? 'text-red-400' : 'text-slate-600'}`}>{doc.checkNote}</p>
-                                            )}
+                                        <div className="flex items-center gap-3 flex-shrink-0">
+                                            <StatusBadge status={doc.verification_status} size="sm" />
+                                            {doc.fileAvailable && <ViewDocumentButton applicationId={app.id} document={doc} role="beneficiary" />}
+                                            {uploadsOpen && (doc.verification_status === 'NOT_PROVIDED' || doc.verification_status === 'CHECKS_FAILED' || needsReupload(doc)) ? (
+                                                <label className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-500/15 hover:bg-blue-500/25 border border-blue-500/30 text-blue-400 rounded-lg text-xs font-medium cursor-pointer transition-colors">
+                                                    <Upload size={12} /> {doc.verification_status === 'CHECKS_FAILED' ? 'Try Again' : needsReupload(doc) ? 'Upload Again' : 'Upload'}
+                                                    <input
+                                                        type="file"
+                                                        className="sr-only"
+                                                        aria-label={`Upload ${doc.label}`}
+                                                        accept=".pdf,.jpg,.jpeg,.png"
+                                                        onChange={e => {
+                                                            const file = e.target.files?.[0];
+                                                            // Reset so choosing the same file again still fires a change.
+                                                            e.target.value = '';
+                                                            if (file) void handleUpload(doc.id, app.id, file);
+                                                        }}
+                                                    />
+                                                </label>
+                                            ) : null}
                                         </div>
                                     </div>
-                                    <div className="flex items-center gap-3 flex-shrink-0">
-                                        <StatusBadge status={doc.verification_status} size="sm" />
-                                        {doc.fileAvailable && <ViewDocumentButton applicationId={app.id} document={doc} role="beneficiary" />}
-                                        {uploadsOpen && (doc.verification_status === 'NOT_PROVIDED' || doc.verification_status === 'CHECKS_FAILED' || needsReupload(doc)) ? (
-                                            <label className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-500/15 hover:bg-blue-500/25 border border-blue-500/30 text-blue-400 rounded-lg text-xs font-medium cursor-pointer transition-colors">
-                                                <Upload size={12} /> {doc.verification_status === 'CHECKS_FAILED' ? 'Try Again' : needsReupload(doc) ? 'Upload Again' : 'Upload'}
-                                                <input
-                                                    type="file"
-                                                    className="sr-only"
-                                                    aria-label={`Upload ${doc.label}`}
-                                                    accept=".pdf,.jpg,.jpeg,.png"
-                                                    onChange={e => {
-                                                        const file = e.target.files?.[0];
-                                                        // Reset so choosing the same file again still fires a change.
-                                                        e.target.value = '';
-                                                        if (file) void handleUpload(doc.id, app.id, file);
-                                                    }}
-                                                />
-                                            </label>
-                                        ) : null}
-                                    </div>
+                                    {canDeleteDocument(app, doc) && (
+                                        <div className="flex justify-end">
+                                            <ConfirmButton
+                                                label="Delete"
+                                                question={`Delete ${doc.label}? Lenders will no longer be able to open it.`}
+                                                confirmLabel="Yes, delete"
+                                                onConfirm={() => handleDelete(doc.id, app.id)}
+                                            />
+                                        </div>
+                                    )}
                                 </div>
                             ))}
                         </div>
 
                         <p className="mt-3 text-xs text-slate-600">
-                            Note: Uploading a document does not establish its authenticity. File OK means only that the file's type and size passed. Nobody has confirmed it's genuine, and no government verification is integrated. {isMockMode ? "In demo mode only the file's name is kept." : 'Files are stored encrypted. Only you and the lenders you chose can open them.'}
+                            Note: Uploading a document does not establish its authenticity. File OK means only that the file's type and size passed. Nobody has confirmed it's genuine, and no government verification is integrated. {isMockMode ? "In demo mode only the file's name is kept." : 'Files are stored encrypted. Only you and the lenders you chose can open them, and you can delete a file until you accept an offer.'}
                         </p>
                     </Card>
                 );

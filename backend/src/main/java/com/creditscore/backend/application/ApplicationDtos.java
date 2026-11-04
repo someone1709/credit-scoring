@@ -5,6 +5,7 @@ import jakarta.validation.constraints.DecimalMax;
 import jakarta.validation.constraints.DecimalMin;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
+import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotEmpty;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Pattern;
@@ -47,12 +48,16 @@ public final class ApplicationDtos {
             @NotNull(message = "Choose a tenure") @Min(value = 1, message = "Choose a valid tenure") @Max(value = 120, message = "Choose a valid tenure") Integer tenureMonths,
             @Size(max = 10, message = "Use 10 features or fewer") List<@Size(max = 40, message = "Use 40 characters or fewer per feature") String> features) {}
 
+    public record ReplyRequest(
+            @NotBlank(message = "Write your reply") @Size(max = 500, message = "Use 500 characters or fewer") String message) {}
+
     public record ApplicantProfileDto(String occupation, String city, String state) {}
 
     public record DocumentDto(String id, String applicationId, String beneficiaryId, Enums.DocumentType type, String label, String filename,
                               Instant uploadedAt, AssessmentContract.VerificationStatus verificationStatus, String checkNote, boolean fileAvailable) {}
 
-    public record DecisionDto(String lenderId, String lenderName, String applicationId, Enums.DecisionStatus status, Instant lastUpdated, String note) {}
+    public record DecisionDto(String lenderId, String lenderName, String applicationId, Enums.DecisionStatus status, Instant lastUpdated, String note,
+                              String applicantReply, Instant applicantReplyAt) {}
 
     public record OfferDto(String id, String lenderId, String lenderName, String lenderLogoInitials, String lenderLogoColor, String applicationId,
                            String beneficiaryId, BigDecimal amount, BigDecimal interestRate, int tenureMonths, Enums.OfferStatus status,

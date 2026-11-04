@@ -75,7 +75,8 @@ public class LoanApplication {
     @PrimaryKeyJoinColumn
     private CreditAssessment assessment;
 
-    @OneToMany(mappedBy = "application", cascade = CascadeType.ALL)
+    // Removing a row takes away that lender's access, so it has to reach the database.
+    @OneToMany(mappedBy = "application", cascade = CascadeType.ALL, orphanRemoval = true)
     @OrderBy("id ASC")
     private List<LenderDecision> lenderDecisions = new ArrayList<>();
 

@@ -169,6 +169,21 @@ export const mockAppService: AppDataService = {
         }, DOCUMENT_CHECK_DELAY_MS);
     },
 
+    async deleteDocument(applicationId, documentId, beneficiaryId) {
+        const now = new Date();
+        applyTransition({ app: workflow.deleteDocument(findApplication(applicationId), beneficiaryId, documentId, now), notices: [] }, now);
+    },
+
+    async revokeLender(applicationId, lenderId, beneficiaryId) {
+        const now = new Date();
+        applyTransition(workflow.revokeLender(findApplication(applicationId), beneficiaryId, lenderId, now), now);
+    },
+
+    async replyToLender(applicationId, lenderId, beneficiaryId, message) {
+        const now = new Date();
+        applyTransition(workflow.replyToLender(findApplication(applicationId), beneficiaryId, lenderId, message, now), now);
+    },
+
     async fetchDocumentFile() {
         throw new Error("Files aren't kept in demo mode.");
     },

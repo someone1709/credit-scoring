@@ -14,6 +14,10 @@ import Login from '@/pages/auth/Login';
 import Register from '@/pages/auth/Register';
 import ForgotPassword from '@/pages/auth/ForgotPassword';
 import ResetPassword from '@/pages/auth/ResetPassword';
+import VerifyEmail from '@/pages/auth/VerifyEmail';
+
+// Platform administration
+import LenderApprovals from '@/pages/admin/LenderApprovals';
 
 // Shared
 import Notifications from '@/pages/shared/Notifications';
@@ -66,6 +70,12 @@ export default function App() {
               <Route path="/forgot-password" element={<ForgotPassword />} />
               <Route path="/reset-password" element={<ResetPassword />} />
             </Route>
+
+            {/* Reached from an email, signed in or not */}
+            <Route path="/verify-email" element={<VerifyEmail />} />
+
+            {/* Guarded by a key rather than an account, since the brief has only two user roles */}
+            <Route path="/admin/lenders" element={<LenderApprovals />} />
 
             {/* Beneficiary Portal */}
             <Route element={<RequireRole role="beneficiary" />}>

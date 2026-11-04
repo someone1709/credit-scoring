@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Outlet, useLocation } from 'react-router-dom';
 import { useApp } from '@/context/useApp';
 import { Card, Spinner } from '@/components/shared/UI';
+import { AccountBanners } from './AccountBanners';
 import { Sidebar } from './Sidebar';
 import { Topbar } from './Topbar';
 
@@ -24,6 +25,7 @@ export function Shell() {
             <div className="flex flex-col flex-1 min-w-0 overflow-hidden">
                 <Topbar onOpenMenu={() => setMobileMenuPath(pathname)} />
                 <main className="flex-1 overflow-y-auto p-4 sm:p-6 gradient-bg">
+                    <AccountBanners />
                     {loadError ? (
                         <Card className="max-w-md mx-auto mt-16 text-center">
                             <h1 className="text-base font-bold text-white">We couldn't load your data</h1>

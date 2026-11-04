@@ -10,15 +10,20 @@ import {
     acceptOffer,
     advanceDisbursement,
     applyLenderDecision,
+    canDeleteDocument,
+    canRevokeLender,
     canUploadDocuments,
     checkDocumentFile,
     completeDocumentCheck,
     declineOffer,
+    deleteDocument,
     deriveApplicationStatus,
     deriveVerificationStatus,
     expireOffers,
     makeOffer,
     recordDocumentUpload,
+    replyToLender,
+    revokeLender,
     withdrawOffer,
     workflowStep,
 } from './workflow.ts';
@@ -374,5 +379,99 @@ describe('demo data', () => {
             const app = MOCK_APPLICATIONS.find(a => a.id === match?.[1]);
             assert.ok(app?.lenderDecisions.some(d => d.lenderId === notice.userId), notice.id);
         }
+    });
+});
+
+describe('taking back access', () => {
+    it('removes the lender and withdraws its live offer, leaving other lenders alone', () => {
+        const withOffer = makeOffer(makeOffer(application(), A, terms, 'OFF-A', NOW).app, B, terms, 'OFF-B', NOW).app;
+        const { app, notices } = revokeLender(withOffer, 'BEN', 'A', NOW);
+
+        assert.deepEqual(app.lenderDecisions.map(d => d.lenderId), ['B']);
+        assert.equal(app.offers.find(o => o.id === 'OFF-A')?.status, 'WITHDRAWN');
+        assert.equal(app.offers.find(o => o.id === 'OFF-B')?.status, 'PENDING');
+        assert.equal(app.status, 'OFFERS_AVAILABLE');
+        assert.deepEqual(notices.map(n => [n.userId, n.title]), [['A', 'Access Removed']]);
+    });
+
+    it('stops the removed lender acting on the application', () => {
+        const { app } = revokeLender(application(), 'BEN', 'A', NOW);
+        assert.throws(() => applyLenderDecision(app, A, 'UNDER_REVIEW', null, NOW), WorkflowError);
+        assert.throws(() => makeOffer(app, A, terms, 'OFF', NOW), WorkflowError);
+    });
+
+    it('leaves an application with no lenders readable', () => {
+        const { app } = revokeLender(application([A]), 'BEN', 'A', NOW);
+        assert.equal(app.lenderDecisions.length, 0);
+        assert.equal(app.status, 'SUBMITTED');
+    });
+
+    it("keeps the lender holding the loan, and refuses anyone but the owner", () => {
+        const accepted = acceptOffer(makeOffer(application(), A, terms, 'OFF-A', NOW).app, 'BEN', 'OFF-A', NOW).app;
+        assert.equal(canRevokeLender(accepted, 'A'), false);
+        assert.equal(canRevokeLender(accepted, 'B'), true);
+        assert.throws(() => revokeLender(accepted, 'BEN', 'A', NOW), WorkflowError);
+        assert.throws(() => revokeLender(application(), 'OTHER', 'A', NOW), WorkflowError);
+        assert.throws(() => revokeLender(application(), 'BEN', 'NOT-SHARED', NOW), WorkflowError);
+    });
+});
+
+describe('replying to a lender', () => {
+    const asked = () => applyLenderDecision(application(), A, 'INFO_REQUESTED', 'Which employer?', NOW).app;
+
+    it('records the answer for the lender that asked and tells only that lender', () => {
+        const { app, notices } = replyToLender(asked(), 'BEN', 'A', '  At a tailor shop.  ', NOW);
+        assert.equal(app.lenderDecisions.find(d => d.lenderId === 'A')?.applicantReply, 'At a tailor shop.');
+        assert.equal(app.lenderDecisions.find(d => d.lenderId === 'B')?.applicantReply, undefined);
+        assert.deepEqual(notices.map(n => n.userId), ['A']);
+    });
+
+    it('only works while that lender is waiting, and needs a real message', () => {
+        assert.throws(() => replyToLender(application(), 'BEN', 'A', 'Hello', NOW), WorkflowError);
+        assert.throws(() => replyToLender(asked(), 'BEN', 'A', '   ', NOW), WorkflowError);
+        assert.throws(() => replyToLender(asked(), 'BEN', 'A', 'x'.repeat(501), NOW), WorkflowError);
+        assert.throws(() => replyToLender(asked(), 'OTHER', 'A', 'Hello', NOW), WorkflowError);
+    });
+
+    it('stays visible until the lender asks something new', () => {
+        const replied = replyToLender(asked(), 'BEN', 'A', 'First answer', NOW).app;
+        const reviewing = applyLenderDecision(replied, A, 'UNDER_REVIEW', null, NOW).app;
+        assert.equal(reviewing.lenderDecisions.find(d => d.lenderId === 'A')?.applicantReply, 'First answer');
+        const askedAgain = applyLenderDecision(reviewing, A, 'INFO_REQUESTED', 'One more thing?', NOW).app;
+        assert.equal(askedAgain.lenderDecisions.find(d => d.lenderId === 'A')?.applicantReply, null);
+    });
+});
+
+describe('deleting a document', () => {
+    function uploaded() {
+        const app = recordDocumentUpload(application(), 'BEN', 'APP-DOC1', 'statement.pdf', NOW);
+        return completeDocumentCheck(app, 'APP-DOC1', { passed: true, note: 'File OK' }, NOW).app;
+    }
+
+    it('clears the slot and the overall document status', () => {
+        const before = uploaded();
+        assert.equal(before.assessment?.verification_status, 'CHECKS_PASSED');
+        const app = deleteDocument(before, 'BEN', 'APP-DOC1', NOW);
+        const doc = app.documents.find(d => d.id === 'APP-DOC1');
+        assert.equal(doc?.verification_status, 'NOT_PROVIDED');
+        assert.equal(doc?.filename, null);
+        assert.equal(doc?.checkNote, null);
+        assert.equal(app.assessment?.verification_status, 'NOT_PROVIDED');
+    });
+
+    it('lets the slot be used again', () => {
+        const app = deleteDocument(uploaded(), 'BEN', 'APP-DOC1', NOW);
+        assert.equal(recordDocumentUpload(app, 'BEN', 'APP-DOC1', 'new.pdf', NOW).documents.find(d => d.id === 'APP-DOC1')?.filename, 'new.pdf');
+    });
+
+    it("refuses an empty slot, a check still running, someone else, or a document a loan relies on", () => {
+        assert.throws(() => deleteDocument(application(), 'BEN', 'APP-DOC1', NOW), WorkflowError);
+        assert.throws(() => deleteDocument(uploaded(), 'OTHER', 'APP-DOC1', NOW), WorkflowError);
+        const checking = recordDocumentUpload(application(), 'BEN', 'APP-DOC1', 'statement.pdf', NOW);
+        assert.throws(() => deleteDocument(checking, 'BEN', 'APP-DOC1', NOW), WorkflowError);
+        assert.equal(canDeleteDocument(checking, checking.documents[0]), false);
+
+        const accepted = acceptOffer(makeOffer(uploaded(), A, terms, 'OFF-A', NOW).app, 'BEN', 'OFF-A', NOW).app;
+        assert.throws(() => deleteDocument(accepted, 'BEN', 'APP-DOC1', NOW), WorkflowError);
     });
 });

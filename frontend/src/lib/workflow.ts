@@ -26,6 +26,7 @@ export interface TransitionResult {
 export type LenderAction = 'UNDER_REVIEW' | 'INFO_REQUESTED' | 'REJECTED';
 
 const OFFER_VALIDITY_DAYS = 30;
+const MAX_REPLY_LENGTH = 500;
 const MAX_DOCUMENT_BYTES = 5 * 1024 * 1024;
 const ALLOWED_DOCUMENT_TYPES: Record<string, string[]> = {
     pdf: ['application/pdf'],
@@ -98,6 +99,17 @@ export function canUploadDocuments(app: LoanApplication): boolean {
     return app.status !== 'DISBURSED' && app.status !== 'REJECTED';
 }
 
+/** An accepted offer relies on the documents. A check still running has nothing to remove yet. */
+export function canDeleteDocument(app: LoanApplication, document: Pick<Document, 'verification_status'>): boolean {
+    if (getAcceptedOffer(app)) return false;
+    return document.verification_status !== 'NOT_PROVIDED' && document.verification_status !== 'DOCUMENT_UPLOADED';
+}
+
+/** Sharing was the applicant's choice, so they can take it back, except from the lender holding their loan. */
+export function canRevokeLender(app: LoanApplication, lenderId: string): boolean {
+    return isSharedWithLender(app, lenderId) && getAcceptedOffer(app)?.lender_id !== lenderId;
+}
+
 /** Index of the current step in the five-step application workflow; 5 means every step is done. */
 export function workflowStep(status: ApplicationStatus): number {
     switch (status) {
@@ -120,8 +132,10 @@ function withDerivedStatus(app: LoanApplication, now: Date): LoanApplication {
 }
 
 function setDecision(app: LoanApplication, lenderId: string, patch: Pick<LenderDecision, 'status' | 'note'>, now: Date): LenderDecision[] {
+    // A new question starts fresh. Otherwise the applicant's last answer stays visible to the lender.
+    const reply = patch.status === 'INFO_REQUESTED' ? { applicantReply: null, applicantReplyAt: null } : {};
     return app.lenderDecisions.map(d =>
-        d.lenderId === lenderId ? { ...d, ...patch, lastUpdated: now.toISOString() } : d,
+        d.lenderId === lenderId ? { ...d, ...patch, ...reply, lastUpdated: now.toISOString() } : d,
     );
 }
 
@@ -372,6 +386,50 @@ export function expireOffers(app: LoanApplication, now: Date): TransitionResult 
     };
 }
 
+function assertOwner(app: LoanApplication, beneficiaryId: string): void {
+    if (app.beneficiaryId !== beneficiaryId) {
+        throw new WorkflowError('This application belongs to another account.');
+    }
+}
+
+/** Takes back any live offer and all access. Past offers stay on record for the applicant. */
+export function revokeLender(app: LoanApplication, beneficiaryId: string, lenderId: string, now: Date): TransitionResult {
+    assertOwner(app, beneficiaryId);
+    if (!isSharedWithLender(app, lenderId)) {
+        throw new WorkflowError("This lender doesn't have access to this application.");
+    }
+    if (!canRevokeLender(app, lenderId)) {
+        throw new WorkflowError("You've accepted this lender's offer, so it keeps access to this application.");
+    }
+    const offers = app.offers.map(o =>
+        o.lender_id === lenderId && o.status === 'PENDING' ? { ...o, status: 'WITHDRAWN' as OfferStatus } : o,
+    );
+    const lenderDecisions = app.lenderDecisions.filter(d => d.lenderId !== lenderId);
+    return {
+        app: withDerivedStatus({ ...app, offers, lenderDecisions }, now),
+        notices: [{ userId: lenderId, userRole: 'lender', type: 'info', title: 'Access Removed', message: `The applicant removed your access to application #${app.id}.` }],
+    };
+}
+
+export function replyToLender(app: LoanApplication, beneficiaryId: string, lenderId: string, message: string, now: Date): TransitionResult {
+    assertOwner(app, beneficiaryId);
+    const decision = app.lenderDecisions.find(d => d.lenderId === lenderId);
+    if (!decision) throw new WorkflowError("This lender doesn't have access to this application.");
+    if (decision.status !== 'INFO_REQUESTED') throw new WorkflowError("This lender isn't waiting for information from you.");
+
+    const trimmed = message.trim();
+    if (!trimmed) throw new WorkflowError('Write your reply.');
+    if (trimmed.length > MAX_REPLY_LENGTH) throw new WorkflowError(`Use ${MAX_REPLY_LENGTH} characters or fewer.`);
+
+    const lenderDecisions = app.lenderDecisions.map(d =>
+        d.lenderId === lenderId ? { ...d, applicantReply: trimmed, applicantReplyAt: now.toISOString() } : d,
+    );
+    return {
+        app: { ...app, lenderDecisions, lastUpdatedAt: now.toISOString() },
+        notices: [{ userId: lenderId, userRole: 'lender', type: 'info', title: 'Applicant Replied', message: `On application #${app.id}: ${trimmed}` }],
+    };
+}
+
 // ============================================================
 // Documents
 // ============================================================
@@ -413,6 +471,24 @@ export function recordDocumentUpload(app: LoanApplication, beneficiaryId: string
     const documents = app.documents.map(d =>
         d.id === documentId
             ? { ...d, filename, uploadedAt: now.toISOString(), verification_status: 'DOCUMENT_UPLOADED' as VerificationStatus, checkNote: 'Awaiting basic file checks.' }
+            : d,
+    );
+    return withDocuments(app, documents, now);
+}
+
+/** The file and what's known about it both go, and the slot can be used again. */
+export function deleteDocument(app: LoanApplication, beneficiaryId: string, documentId: string, now: Date): LoanApplication {
+    assertOwner(app, beneficiaryId);
+    const document = app.documents.find(d => d.id === documentId);
+    if (!document) throw new WorkflowError('This document could not be found.');
+    if (getAcceptedOffer(app)) {
+        throw new WorkflowError("You've accepted an offer that relies on these documents, so they can no longer be removed.");
+    }
+    if (!canDeleteDocument(app, document)) throw new WorkflowError('Nothing has been uploaded here.');
+
+    const documents = app.documents.map(d =>
+        d.id === documentId
+            ? { ...d, filename: null, uploadedAt: null, verification_status: 'NOT_PROVIDED' as VerificationStatus, checkNote: null, fileAvailable: false }
             : d,
     );
     return withDocuments(app, documents, now);

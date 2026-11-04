@@ -86,6 +86,15 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     const uploadDocument = useCallback((applicationId: string, documentId: string, beneficiaryId: string, file: File) =>
         perform(() => appService.uploadDocument(applicationId, documentId, beneficiaryId, file)), [perform]);
 
+    const deleteDocument = useCallback((applicationId: string, documentId: string, beneficiaryId: string) =>
+        perform(() => appService.deleteDocument(applicationId, documentId, beneficiaryId)), [perform]);
+
+    const revokeLender = useCallback((applicationId: string, lenderId: string, beneficiaryId: string) =>
+        perform(() => appService.revokeLender(applicationId, lenderId, beneficiaryId)), [perform]);
+
+    const replyToLender = useCallback((applicationId: string, lenderId: string, beneficiaryId: string, message: string) =>
+        perform(() => appService.replyToLender(applicationId, lenderId, beneficiaryId, message)), [perform]);
+
     const syncApplicantProfile = useCallback((beneficiary: BeneficiaryProfile) =>
         perform(() => appService.syncApplicantProfile(beneficiary)), [perform]);
 
@@ -125,7 +134,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         applications.find(a => a.id === applicationId && isSharedWithLender(a, lenderId)), [applications]);
 
     const getOffersByLender = useCallback((lenderId: string) =>
-        applications.flatMap(a => a.offers.filter(o => o.lender_id === lenderId)), [applications]);
+        applications.filter(a => isSharedWithLender(a, lenderId)).flatMap(a => a.offers.filter(o => o.lender_id === lenderId)), [applications]);
 
     const getNotificationsByUser = useCallback((targetUserId: string) =>
         notifications.filter(n => n.userId === targetUserId), [notifications]);
@@ -137,7 +146,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
             applications, notifications, loading, loadError, retryLoad: firstLoad,
             listLenders: appService.listLenders,
             fetchDocumentFile: appService.fetchDocumentFile,
-            submitApplication, acceptOffer, declineOffer, uploadDocument, syncApplicantProfile,
+            submitApplication, acceptOffer, declineOffer, uploadDocument, deleteDocument, revokeLender, replyToLender, syncApplicantProfile,
             updateLenderDecision, createOffer, withdrawOffer, advanceDisbursement,
             markNotificationRead, markAllNotificationsRead,
             getApplicationsByBeneficiary, getApplicationsByLender,

@@ -1,6 +1,7 @@
 package com.creditscore.backend.auth;
 
 import com.creditscore.backend.config.AppProperties;
+import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import jakarta.validation.Valid;
 import java.time.Duration;
@@ -32,8 +33,8 @@ class AuthController {
     private final AppProperties properties;
 
     @PostMapping("/login")
-    AuthDtos.AuthResponse login(@Valid @RequestBody AuthDtos.LoginRequest request, HttpServletResponse response) {
-        return respond(authService.login(request), response);
+    AuthDtos.AuthResponse login(@Valid @RequestBody AuthDtos.LoginRequest request, HttpServletRequest http, HttpServletResponse response) {
+        return respond(authService.login(request, http.getRemoteAddr()), response);
     }
 
     @PostMapping("/register")
@@ -56,14 +57,26 @@ class AuthController {
 
     @PostMapping("/forgot-password")
     @ResponseStatus(HttpStatus.ACCEPTED)
-    void forgotPassword(@Valid @RequestBody AuthDtos.ForgotPasswordRequest request) {
-        authService.requestPasswordReset(request.email());
+    void forgotPassword(@Valid @RequestBody AuthDtos.ForgotPasswordRequest request, HttpServletRequest http) {
+        authService.requestPasswordReset(request.email(), http.getRemoteAddr());
     }
 
     @PostMapping("/reset-password")
     @ResponseStatus(HttpStatus.NO_CONTENT)
-    void resetPassword(@Valid @RequestBody AuthDtos.ResetPasswordRequest request) {
-        authService.resetPassword(request);
+    void resetPassword(@Valid @RequestBody AuthDtos.ResetPasswordRequest request, HttpServletRequest http) {
+        authService.resetPassword(request, http.getRemoteAddr());
+    }
+
+    @PostMapping("/verify-email")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    void verifyEmail(@Valid @RequestBody AuthDtos.VerifyEmailRequest request, HttpServletRequest http) {
+        authService.verifyEmail(request, http.getRemoteAddr());
+    }
+
+    @PostMapping("/resend-verification")
+    @ResponseStatus(HttpStatus.ACCEPTED)
+    void resendVerification(@AuthenticationPrincipal Jwt jwt) {
+        authService.resendVerification(jwt.getSubject());
     }
 
     @PostMapping("/change-password")

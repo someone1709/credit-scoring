@@ -70,7 +70,7 @@ function computeRiskScore(req: CreditAssessmentRequest): number {
 }
 
 /** A separate measure from risk: 70% inverse risk, 30% affordability. Higher is more favourable. */
-function computeCompositeScore(riskScore: number, req: CreditAssessmentRequest): number {
+export function computeCompositeScore(riskScore: number, req: CreditAssessmentRequest): number {
     const surplus = monthlySurplus(req.monthly_income, req.monthly_expenses, req.existing_emi);
     const surplusShare = req.monthly_income > 0 ? surplus / req.monthly_income : 0;
     const affordability = Math.max(0, Math.min(100, surplusShare * 200)); // 50% of income left scores 100

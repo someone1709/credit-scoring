@@ -27,4 +27,10 @@ final class TokenRepositories {
 
         List<PasswordResetToken> findByUserIdAndUsedFalse(String userId);
     }
+
+    interface EmailVerificationTokenRepository extends JpaRepository<EmailVerificationToken, Long> {
+        Optional<EmailVerificationToken> findByTokenHash(String tokenHash);
+
+        List<EmailVerificationToken> findByUserIdAndUsedFalse(String userId);
+    }
 }

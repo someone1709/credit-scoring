@@ -2,7 +2,7 @@
 // backend only means setting VITE_API_MODE=live. This file is the one place that knows the
 // wire format: snake_case JSON, mapped to the app's types below. See README for the contract.
 
-import type { BeneficiaryProfile, LenderProfile } from '@/types';
+import type { ApprovalStatus, BeneficiaryProfile, LenderProfile } from '@/types';
 import type { AuthService, AuthUser, BeneficiaryProfileUpdate, RegisterInput } from '@/types/auth';
 import { http, refreshSession, setAccessToken, toApiError } from '@/services/http';
 
@@ -18,6 +18,7 @@ interface BeneficiaryDto {
     city: string | null;
     state: string | null;
     pincode: string | null;
+    email_verified: boolean;
 }
 
 interface LenderDto {
@@ -28,6 +29,8 @@ interface LenderDto {
     email: string;
     phone: string;
     license_number: string;
+    email_verified: boolean;
+    approval_status: ApprovalStatus;
 }
 
 type UserDto = BeneficiaryDto | LenderDto;
@@ -59,6 +62,8 @@ function toAuthUser(dto: UserDto): AuthUser {
             licenseNumber: dto.license_number,
             logoInitials: initialsOf(dto.institution_name),
             logoColor: logoColorFor(dto.id),
+            emailVerified: dto.email_verified,
+            approvalStatus: dto.approval_status,
         };
         return { role: 'lender', profile, isDemo: false };
     }
@@ -73,6 +78,7 @@ function toAuthUser(dto: UserDto): AuthUser {
         city: dto.city ?? '',
         state: dto.state ?? '',
         pincode: dto.pincode ?? '',
+        emailVerified: dto.email_verified,
     };
     return { role: 'beneficiary', profile, isDemo: false };
 }
@@ -126,6 +132,10 @@ export const httpAuthService: AuthService = {
         }
     },
 
+    async currentUser() {
+        return toAuthUser(await call(() => http.get<UserDto>('/auth/me')));
+    },
+
     async requestPasswordReset(email) {
         await call(() => http.post('/auth/forgot-password', { email }));
         return { simulatedResetToken: null };
@@ -137,6 +147,14 @@ export const httpAuthService: AuthService = {
 
     async changePassword(currentPassword, newPassword) {
         await call(() => http.post('/auth/change-password', { current_password: currentPassword, new_password: newPassword }));
+    },
+
+    async verifyEmail(token) {
+        await call(() => http.post('/auth/verify-email', { token }));
+    },
+
+    async resendVerification() {
+        await call(() => http.post('/auth/resend-verification'));
     },
 
     async updateBeneficiaryProfile(update: BeneficiaryProfileUpdate) {

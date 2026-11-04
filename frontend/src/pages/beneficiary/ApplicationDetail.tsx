@@ -1,22 +1,80 @@
+import { useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { useApp } from '@/context/useApp';
 import { useBeneficiary } from '@/context/useAuth';
-import { AssessmentNote, Card, InfoRow, DemoDisclaimer } from '@/components/shared/UI';
+import { ActionError, AssessmentNote, Card, ConfirmButton, InfoRow, DemoDisclaimer } from '@/components/shared/UI';
 import { StatusBadge } from '@/components/shared/StatusBadge';
 import { ScoreGauge } from '@/components/shared/ScoreGauge';
 import { ApplicationWorkflowStepper, DisbursementStepper } from '@/components/shared/Stepper';
-import { canUploadDocuments, workflowStep } from '@/lib/workflow';
+import { canRevokeLender, canUploadDocuments, workflowStep } from '@/lib/workflow';
 import { ArrowLeft, Info } from 'lucide-react';
+import type { LenderDecision } from '@/types';
 
 function formatCurrency(n: number) { return '₹' + n.toLocaleString('en-IN'); }
 function formatDate(iso: string) {
     return new Date(iso).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
 }
 
+const MAX_REPLY_LENGTH = 500;
+
+/** One lender's question, with the applicant's answer. Only that lender can read either. */
+function InformationRequest({ decision, onReply }: { decision: LenderDecision; onReply: (message: string) => Promise<void> }) {
+    const [message, setMessage] = useState('');
+    const [sending, setSending] = useState(false);
+    const [error, setError] = useState<string | null>(null);
+    const fieldId = `reply-${decision.lenderId}`;
+
+    const send = async () => {
+        setError(null);
+        setSending(true);
+        try {
+            await onReply(message);
+            setMessage('');
+        } catch (e) {
+            setError(e instanceof Error ? e.message : "Your reply couldn't be sent. Please try again.");
+        } finally {
+            setSending(false);
+        }
+    };
+
+    return (
+        <li className="p-3 bg-[#0d1117] rounded-lg border border-[#30363d]">
+            <p className="text-sm text-slate-300 break-words"><strong className="text-white">{decision.lenderName}:</strong> {decision.note}</p>
+            {decision.applicantReply && (
+                <p className="text-sm text-slate-400 mt-2 break-words"><strong className="text-slate-300">Your reply:</strong> {decision.applicantReply}</p>
+            )}
+            <label htmlFor={fieldId} className="block text-xs font-medium text-slate-500 mt-3 mb-1.5">
+                {decision.applicantReply ? 'Send a new reply' : `Reply to ${decision.lenderName}`}
+            </label>
+            <textarea
+                id={fieldId}
+                rows={2}
+                maxLength={MAX_REPLY_LENGTH}
+                value={message}
+                onChange={e => setMessage(e.target.value)}
+                className="w-full bg-[#161b22] border border-[#30363d] rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-emerald-500"
+            />
+            <ActionError message={error} className="mt-2" />
+            <div className="flex items-center justify-between gap-3 mt-2">
+                <span className="text-xs text-slate-600">{message.length}/{MAX_REPLY_LENGTH}</span>
+                <button
+                    type="button"
+                    disabled={sending || message.trim() === ''}
+                    onClick={() => void send()}
+                    className="px-3 py-1.5 bg-emerald-500 hover:bg-emerald-600 disabled:opacity-50 text-white rounded-lg text-xs font-semibold transition-colors"
+                >
+                    {sending ? 'Sending...' : 'Send Reply'}
+                </button>
+            </div>
+        </li>
+    );
+}
+
 export default function ApplicationDetail() {
     const { id } = useParams<{ id: string }>();
     const beneficiary = useBeneficiary();
-    const { getBeneficiaryApplication } = useApp();
+    const { getBeneficiaryApplication, revokeLender, replyToLender } = useApp();
+    const [accessError, setAccessError] = useState<string | null>(null);
     const app = id ? getBeneficiaryApplication(id, beneficiary.id) : undefined;
 
     if (!app) return (
@@ -28,6 +86,15 @@ export default function ApplicationDetail() {
 
     const assessment = app.assessment;
     const infoRequests = app.lenderDecisions.filter(d => d.status === 'INFO_REQUESTED');
+
+    const removeAccess = async (lenderId: string) => {
+        setAccessError(null);
+        try {
+            await revokeLender(app.id, lenderId, beneficiary.id);
+        } catch (e) {
+            setAccessError(e instanceof Error ? e.message : "Access couldn't be removed. Please try again.");
+        }
+    };
 
     return (
         <div className="space-y-6 max-w-4xl">
@@ -54,9 +121,9 @@ export default function ApplicationDetail() {
             {infoRequests.length > 0 && (
                 <Card className="border-amber-500/30">
                     <h2 className="text-base font-bold text-white mb-3 flex items-center gap-2"><Info size={16} className="text-amber-400" /> Information Requested</h2>
-                    <ul className="space-y-2">
+                    <ul className="space-y-3">
                         {infoRequests.map(d => (
-                            <li key={d.lenderId} className="text-sm text-slate-300"><strong className="text-white">{d.lenderName}:</strong> {d.note}</li>
+                            <InformationRequest key={d.lenderId} decision={d} onReply={message => replyToLender(app.id, d.lenderId, beneficiary.id, message)} />
                         ))}
                     </ul>
                     {canUploadDocuments(app) && (
@@ -114,19 +181,32 @@ export default function ApplicationDetail() {
             {/* Lender Decisions */}
             <Card>
                 <h2 className="text-base font-bold text-white mb-4">Lender Decisions</h2>
+                <ActionError message={accessError} className="mb-3" />
                 <div className="space-y-3">
                     {app.lenderDecisions.length === 0 ? (
-                        <p className="text-slate-500 text-sm">No lender decisions yet.</p>
+                        <p className="text-slate-500 text-sm">No lender can see this application. To share your details with a lender, submit a new application.</p>
                     ) : app.lenderDecisions.map(d => (
-                        <div key={d.lenderId} className="flex items-center justify-between p-3 bg-[#0d1117] rounded-lg border border-[#30363d]">
-                            <div>
-                                <p className="text-sm font-medium text-white">{d.lenderName}</p>
-                                {d.note && <p className="text-xs text-slate-500 mt-0.5">{d.note}</p>}
+                        <div key={d.lenderId} className="p-3 bg-[#0d1117] rounded-lg border border-[#30363d] space-y-2">
+                            <div className="flex items-center justify-between">
+                                <div className="min-w-0">
+                                    <p className="text-sm font-medium text-white">{d.lenderName}</p>
+                                    {d.note && <p className="text-xs text-slate-500 mt-0.5 break-words">{d.note}</p>}
+                                </div>
+                                <div className="text-right flex-shrink-0 ml-4">
+                                    <StatusBadge status={d.status} size="sm" />
+                                    <p className="text-xs text-slate-600 mt-1">{formatDate(d.lastUpdated)}</p>
+                                </div>
                             </div>
-                            <div className="text-right flex-shrink-0 ml-4">
-                                <StatusBadge status={d.status} size="sm" />
-                                <p className="text-xs text-slate-600 mt-1">{formatDate(d.lastUpdated)}</p>
-                            </div>
+                            {canRevokeLender(app, d.lenderId) && (
+                                <div className="flex justify-end">
+                                    <ConfirmButton
+                                        label="Remove access"
+                                        question={`Stop sharing this application with ${d.lenderName}? Any offer from it will be withdrawn, and this can't be undone.`}
+                                        confirmLabel="Yes, remove"
+                                        onConfirm={() => removeAccess(d.lenderId)}
+                                    />
+                                </div>
+                            )}
                         </div>
                     ))}
                 </div>

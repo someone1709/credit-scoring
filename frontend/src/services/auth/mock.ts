@@ -214,6 +214,10 @@ export const mockAuthService: AuthService = {
         return user ? toAuthUser(user) : null;
     },
 
+    async currentUser() {
+        return this.restoreSession();
+    },
+
     async requestPasswordReset(email) {
         await wait();
         const user = readUsers().find(candidate => candidate.profile.email.toLowerCase() === normaliseEmail(email));
@@ -254,6 +258,13 @@ export const mockAuthService: AuthService = {
         const passwordHash = await hashPassword(newPassword, salt);
         writeUsers(users.map(candidate => (candidate.profile.id === user.profile.id ? { ...candidate, salt, passwordHash } : candidate)));
     },
+
+    // This mode can't send email, so accounts never have an address to confirm.
+    async verifyEmail() {
+        throw new ApiError(400, 'INVALID_VERIFICATION_TOKEN', "Email confirmation isn't used in demo mode.");
+    },
+
+    async resendVerification() {},
 
     async updateBeneficiaryProfile(update: BeneficiaryProfileUpdate) {
         await wait();

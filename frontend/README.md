@@ -22,7 +22,7 @@ Open the address Vite prints. This runs on demo data in your browser, so no back
 | `npm run build` | Type-checks and builds for production into `dist/` |
 | `npm run typecheck` | Runs the TypeScript compiler |
 | `npm run lint` | Runs Oxlint |
-| `npm test` | Runs the rule tests in `src/lib/rules.test.ts` |
+| `npm test` | Runs the rule tests in `src/lib/`, including the scoring cases shared with the backend and ML service |
 
 ## Trying it
 

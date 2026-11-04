@@ -27,6 +27,10 @@ export interface AppDataService {
     acceptOffer(offerId: string, applicationId: string, beneficiaryId: string): Promise<void>;
     declineOffer(offerId: string, applicationId: string, beneficiaryId: string): Promise<void>;
     uploadDocument(applicationId: string, documentId: string, beneficiaryId: string, file: File): Promise<void>;
+    deleteDocument(applicationId: string, documentId: string, beneficiaryId: string): Promise<void>;
+    /** Takes the application back from one lender. */
+    revokeLender(applicationId: string, lenderId: string, beneficiaryId: string): Promise<void>;
+    replyToLender(applicationId: string, lenderId: string, beneficiaryId: string, message: string): Promise<void>;
     /** The uploaded file, for its owner or a lender it was shared with. */
     fetchDocumentFile(applicationId: string, documentId: string, role: UserRole): Promise<Blob>;
     /** The backend reads the profile live, so only the mock has a copy to update. */

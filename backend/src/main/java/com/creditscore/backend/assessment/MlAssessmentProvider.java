@@ -39,6 +39,20 @@ public class MlAssessmentProvider implements AssessmentProvider {
         }
     }
 
+    private record ServiceHealth(String status) {}
+
+    /** UP, DOWN, or OFF when no ML service is configured. Scoring still works in the last two, using the rules. */
+    public String status() {
+        if (client == null) return "OFF";
+        try {
+            // A service with no trained model is running but can't assess anyone, so it counts as down.
+            ServiceHealth health = client.get().uri("/health").retrieve().body(ServiceHealth.class);
+            return health != null && "UP".equals(health.status()) ? "UP" : "DOWN";
+        } catch (RestClientException e) {
+            return "DOWN";
+        }
+    }
+
     @Override
     public AssessmentContract.Response assess(AssessmentContract.Request request, AssessmentContract.VerificationStatus verificationStatus) {
         if (client == null) return rules.assess(request, verificationStatus);

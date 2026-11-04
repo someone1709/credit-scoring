@@ -1,0 +1,407 @@
+{
+  "about": "One set of answers that the website, the backend and the ML service must all give. Each of them has a test that reads this file. If a threshold changes, change it here and in all three.",
+  "risk_categories": [
+    {
+      "risk_score": 0,
+      "expected": "LOW"
+    },
+    {
+      "risk_score": 30,
+      "expected": "LOW"
+    },
+    {
+      "risk_score": 31,
+      "expected": "MEDIUM"
+    },
+    {
+      "risk_score": 60,
+      "expected": "MEDIUM"
+    },
+    {
+      "risk_score": 61,
+      "expected": "HIGH"
+    },
+    {
+      "risk_score": 100,
+      "expected": "HIGH"
+    }
+  ],
+  "income_brackets": [
+    {
+      "monthly_income": 0,
+      "expected": "UNKNOWN"
+    },
+    {
+      "monthly_income": 1,
+      "expected": "LOW_INCOME"
+    },
+    {
+      "monthly_income": 24999,
+      "expected": "LOW_INCOME"
+    },
+    {
+      "monthly_income": 25000,
+      "expected": "MID_INCOME"
+    },
+    {
+      "monthly_income": 49999,
+      "expected": "MID_INCOME"
+    },
+    {
+      "monthly_income": 50000,
+      "expected": "HIGH_INCOME"
+    },
+    {
+      "monthly_income": 500000,
+      "expected": "HIGH_INCOME"
+    }
+  ],
+  "segments": [
+    {
+      "composite_score": 75,
+      "income_bracket": "HIGH_INCOME",
+      "expected": "PRIME"
+    },
+    {
+      "composite_score": 100,
+      "income_bracket": "HIGH_INCOME",
+      "expected": "PRIME"
+    },
+    {
+      "composite_score": 74,
+      "income_bracket": "HIGH_INCOME",
+      "expected": "STANDARD_PLUS"
+    },
+    {
+      "composite_score": 70,
+      "income_bracket": "HIGH_INCOME",
+      "expected": "STANDARD_PLUS"
+    },
+    {
+      "composite_score": 75,
+      "income_bracket": "MID_INCOME",
+      "expected": "STANDARD_PLUS"
+    },
+    {
+      "composite_score": 70,
+      "income_bracket": "LOW_INCOME",
+      "expected": "LOW_INCOME_PRIME"
+    },
+    {
+      "composite_score": 69,
+      "income_bracket": "LOW_INCOME",
+      "expected": "STANDARD"
+    },
+    {
+      "composite_score": 45,
+      "income_bracket": "MID_INCOME",
+      "expected": "STANDARD"
+    },
+    {
+      "composite_score": 44,
+      "income_bracket": "MID_INCOME",
+      "expected": "SUBPRIME"
+    },
+    {
+      "composite_score": 30,
+      "income_bracket": "LOW_INCOME",
+      "expected": "SUBPRIME"
+    },
+    {
+      "composite_score": 29,
+      "income_bracket": "HIGH_INCOME",
+      "expected": "HIGH_RISK"
+    },
+    {
+      "composite_score": 0,
+      "income_bracket": "LOW_INCOME",
+      "expected": "HIGH_RISK"
+    }
+  ],
+  "composite_scores": [
+    {
+      "name": "half of income left scores full affordability",
+      "risk_score": 20,
+      "monthly_income": 40000,
+      "monthly_expenses": 20000,
+      "existing_emi": 0,
+      "expected": 86
+    },
+    {
+      "name": "more than half left is capped",
+      "risk_score": 20,
+      "monthly_income": 40000,
+      "monthly_expenses": 5000,
+      "existing_emi": 0,
+      "expected": 86
+    },
+    {
+      "name": "nothing left scores no affordability",
+      "risk_score": 20,
+      "monthly_income": 40000,
+      "monthly_expenses": 30000,
+      "existing_emi": 10000,
+      "expected": 56
+    },
+    {
+      "name": "overspending doesn't go below zero affordability",
+      "risk_score": 20,
+      "monthly_income": 40000,
+      "monthly_expenses": 50000,
+      "existing_emi": 0,
+      "expected": 56
+    },
+    {
+      "name": "an exact half rounds up everywhere",
+      "risk_score": 50,
+      "monthly_income": 100000,
+      "monthly_expenses": 97500,
+      "existing_emi": 0,
+      "expected": 37
+    },
+    {
+      "name": "no income scores no affordability",
+      "risk_score": 50,
+      "monthly_income": 0,
+      "monthly_expenses": 0,
+      "existing_emi": 0,
+      "expected": 35
+    }
+  ],
+  "rule_based": [
+    {
+      "name": "good history, comfortable finances",
+      "input": {
+        "monthly_income": 60000,
+        "monthly_expenses": 15000,
+        "existing_emi": 2000,
+        "loan_amount": 100000,
+        "repayment_history": "good"
+      },
+      "expected": {
+        "risk_score": 20,
+        "risk_category": "LOW",
+        "income_bracket": "HIGH_INCOME",
+        "composite_score": 86,
+        "segment": "PRIME",
+        "is_thin_file": false
+      }
+    },
+    {
+      "name": "no history must add no risk",
+      "input": {
+        "monthly_income": 30000,
+        "monthly_expenses": 12000,
+        "existing_emi": 1000,
+        "loan_amount": 50000,
+        "repayment_history": "none"
+      },
+      "expected": {
+        "risk_score": 30,
+        "risk_category": "LOW",
+        "income_bracket": "MID_INCOME",
+        "composite_score": 79,
+        "segment": "STANDARD_PLUS",
+        "is_thin_file": true
+      }
+    },
+    {
+      "name": "average history",
+      "input": {
+        "monthly_income": 30000,
+        "monthly_expenses": 12000,
+        "existing_emi": 1000,
+        "loan_amount": 50000,
+        "repayment_history": "average"
+      },
+      "expected": {
+        "risk_score": 38,
+        "risk_category": "MEDIUM",
+        "income_bracket": "MID_INCOME",
+        "composite_score": 73,
+        "segment": "STANDARD_PLUS",
+        "is_thin_file": false
+      }
+    },
+    {
+      "name": "poor history",
+      "input": {
+        "monthly_income": 30000,
+        "monthly_expenses": 12000,
+        "existing_emi": 1000,
+        "loan_amount": 50000,
+        "repayment_history": "poor"
+      },
+      "expected": {
+        "risk_score": 50,
+        "risk_category": "MEDIUM",
+        "income_bracket": "MID_INCOME",
+        "composite_score": 65,
+        "segment": "STANDARD",
+        "is_thin_file": false
+      }
+    },
+    {
+      "name": "low income, strong profile",
+      "input": {
+        "monthly_income": 18000,
+        "monthly_expenses": 4000,
+        "existing_emi": 0,
+        "loan_amount": 20000,
+        "repayment_history": "good"
+      },
+      "expected": {
+        "risk_score": 20,
+        "risk_category": "LOW",
+        "income_bracket": "LOW_INCOME",
+        "composite_score": 86,
+        "segment": "LOW_INCOME_PRIME",
+        "is_thin_file": false
+      }
+    },
+    {
+      "name": "low income, no history",
+      "input": {
+        "monthly_income": 18000,
+        "monthly_expenses": 9000,
+        "existing_emi": 2000,
+        "loan_amount": 25000,
+        "repayment_history": "none"
+      },
+      "expected": {
+        "risk_score": 43,
+        "risk_category": "MEDIUM",
+        "income_bracket": "LOW_INCOME",
+        "composite_score": 63,
+        "segment": "STANDARD",
+        "is_thin_file": true
+      }
+    },
+    {
+      "name": "heavy existing EMI",
+      "input": {
+        "monthly_income": 40000,
+        "monthly_expenses": 15000,
+        "existing_emi": 18000,
+        "loan_amount": 100000,
+        "repayment_history": "average"
+      },
+      "expected": {
+        "risk_score": 68,
+        "risk_category": "HIGH",
+        "income_bracket": "MID_INCOME",
+        "composite_score": 33,
+        "segment": "SUBPRIME",
+        "is_thin_file": false
+      }
+    },
+    {
+      "name": "spending more than earning",
+      "input": {
+        "monthly_income": 20000,
+        "monthly_expenses": 19000,
+        "existing_emi": 6000,
+        "loan_amount": 80000,
+        "repayment_history": "poor"
+      },
+      "expected": {
+        "risk_score": 95,
+        "risk_category": "HIGH",
+        "income_bracket": "LOW_INCOME",
+        "composite_score": 4,
+        "segment": "HIGH_RISK",
+        "is_thin_file": false
+      }
+    },
+    {
+      "name": "loan far above annual income",
+      "input": {
+        "monthly_income": 25000,
+        "monthly_expenses": 10000,
+        "existing_emi": 3000,
+        "loan_amount": 700000,
+        "repayment_history": "none"
+      },
+      "expected": {
+        "risk_score": 53,
+        "risk_category": "MEDIUM",
+        "income_bracket": "MID_INCOME",
+        "composite_score": 62,
+        "segment": "STANDARD",
+        "is_thin_file": true
+      }
+    },
+    {
+      "name": "loan just above annual income",
+      "input": {
+        "monthly_income": 25000,
+        "monthly_expenses": 10000,
+        "existing_emi": 3000,
+        "loan_amount": 320000,
+        "repayment_history": "good"
+      },
+      "expected": {
+        "risk_score": 41,
+        "risk_category": "MEDIUM",
+        "income_bracket": "MID_INCOME",
+        "composite_score": 70,
+        "segment": "STANDARD_PLUS",
+        "is_thin_file": false
+      }
+    },
+    {
+      "name": "income exactly at the mid bracket",
+      "input": {
+        "monthly_income": 25000,
+        "monthly_expenses": 8000,
+        "existing_emi": 0,
+        "loan_amount": 30000,
+        "repayment_history": "good"
+      },
+      "expected": {
+        "risk_score": 20,
+        "risk_category": "LOW",
+        "income_bracket": "MID_INCOME",
+        "composite_score": 86,
+        "segment": "STANDARD_PLUS",
+        "is_thin_file": false
+      }
+    },
+    {
+      "name": "income exactly at the high bracket",
+      "input": {
+        "monthly_income": 50000,
+        "monthly_expenses": 10000,
+        "existing_emi": 0,
+        "loan_amount": 50000,
+        "repayment_history": "good"
+      },
+      "expected": {
+        "risk_score": 20,
+        "risk_category": "LOW",
+        "income_bracket": "HIGH_INCOME",
+        "composite_score": 86,
+        "segment": "PRIME",
+        "is_thin_file": false
+      }
+    },
+    {
+      "name": "income just under the high bracket",
+      "input": {
+        "monthly_income": 49999,
+        "monthly_expenses": 10000,
+        "existing_emi": 0,
+        "loan_amount": 50000,
+        "repayment_history": "good"
+      },
+      "expected": {
+        "risk_score": 20,
+        "risk_category": "LOW",
+        "income_bracket": "MID_INCOME",
+        "composite_score": 86,
+        "segment": "STANDARD_PLUS",
+        "is_thin_file": false
+      }
+    }
+  ]
+}

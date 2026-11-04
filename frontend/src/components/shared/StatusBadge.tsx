@@ -27,6 +27,8 @@ const variantMap: Record<string, string> = {
     CHECKS_PASSED: 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/30',
     CHECKS_FAILED: 'bg-red-500/15 text-red-400 border border-red-500/30',
     NOT_PROVIDED: 'bg-slate-600/15 text-slate-500 border border-slate-600/30',
+    // Platform approval (PENDING and REJECTED are above)
+    APPROVED: 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/30',
     // Risk
     LOW: 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/30',
     MEDIUM: 'bg-amber-500/15 text-amber-400 border border-amber-500/30',

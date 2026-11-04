@@ -17,6 +17,8 @@ export interface AuthContextValue {
     logout: () => Promise<void>;
     demoLogin: (accountId: string) => Promise<AuthUser>;
     updateBeneficiaryProfile: (update: BeneficiaryProfileUpdate) => Promise<AuthUser>;
+    /** Picks up changes made elsewhere, such as confirming an email in another tab. */
+    refreshUser: () => Promise<void>;
 }
 
 export const AuthContext = createContext<AuthContextValue | null>(null);
@@ -43,6 +45,13 @@ export function useLender(): LenderProfile {
 
 export function homeForRole(role: UserRole): string {
     return role === 'lender' ? '/lender/dashboard' : '/beneficiary/dashboard';
+}
+
+/** True while this account is waiting on something that happens outside this page. */
+export function isAwaitingAccountChange(user: AuthUser | null): boolean {
+    if (!user) return false;
+    if (user.profile.emailVerified === false) return true;
+    return user.role === 'lender' && (user.profile.approvalStatus ?? 'APPROVED') !== 'APPROVED';
 }
 
 /** Workflow step 2 (Master Brief §4): the profile comes before the first application. */

@@ -27,6 +27,9 @@ export interface AppContextValue {
     acceptOffer: (offerId: string, applicationId: string, beneficiaryId: string) => Promise<void>;
     declineOffer: (offerId: string, applicationId: string, beneficiaryId: string) => Promise<void>;
     uploadDocument: (applicationId: string, documentId: string, beneficiaryId: string, file: File) => Promise<void>;
+    deleteDocument: (applicationId: string, documentId: string, beneficiaryId: string) => Promise<void>;
+    revokeLender: (applicationId: string, lenderId: string, beneficiaryId: string) => Promise<void>;
+    replyToLender: (applicationId: string, lenderId: string, beneficiaryId: string, message: string) => Promise<void>;
     syncApplicantProfile: (beneficiary: BeneficiaryProfile) => Promise<void>;
 
     // Lender actions

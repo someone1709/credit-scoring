@@ -17,6 +17,43 @@ Traditional lending relies heavily on credit history, which excludes first-time 
 
 Development order: Frontend (mock) -> Backend -> ML -> Integration.
 
+## Run it
+
+```bash
+./scripts/start-dev.sh
+```
+
+This starts MySQL, the ML service, the backend and the website, reusing anything already running, then prints the address. It needs `backend/.env` to exist, which [the backend README](backend/README.md) explains. Logs go to `.dev-logs/`, and `./scripts/stop-dev.sh` stops what it started.
+
+New lenders have to be approved at `/admin/lenders`, using the `APP_ADMIN_KEY` from `backend/.env`.
+
+## Hosting
+
+The whole site can run at one address with Docker. **This is checked by CI, not on the machine it was built on**, which has no Docker. You need a server with Docker and a domain name.
+
+1. Put a `.env` next to `docker-compose.yml`. Generate each secret, and keep them out of git:
+
+   ```bash
+   DB_USERNAME=credituser
+   DB_PASSWORD=choose-a-password
+   APP_JWT_SECRET=run: openssl rand -base64 48
+   APP_DOCUMENT_KEY=run: openssl rand -base64 32
+   APP_ADMIN_KEY=run: openssl rand -hex 24
+   APP_FRONTEND_URL=https://your-domain
+   APP_CORS_ORIGINS=https://your-domain
+   APP_COOKIE_SECURE=true
+   ```
+
+   Add the `APP_MAIL_*` settings from `backend/.env.example` to send real email. Without them, nobody can reset a forgotten password.
+
+2. Run `docker compose up --build -d`. The site answers on port 8088.
+
+3. Put an HTTPS proxy such as Caddy in front of port 8088. Passwords and documents must never travel over plain HTTP.
+
+4. Back up the database and `APP_DOCUMENT_KEY` together. Stored documents can't be read without that key.
+
+This is an academic prototype on synthetic data, so don't host it for real borrowers.
+
 ## Key Features
 **Beneficiary Portal:** apply for loans, upload documents, track application and document status, compare lender offers.
 **Lender Portal:** review applications and beneficiary profiles, view risk insights, approve / reject / request info (demo actions), create offers, track disbursements (mock).
@@ -41,6 +78,8 @@ React, TypeScript, Tailwind CSS, Recharts | Java 21, Spring Boot | Python, FastA
 ## Repository Structure
 credit-scoring/
   frontend/  backend/  ml-service/
+  shared/   Scoring answers that all three services are tested against
+  scripts/  Start and stop everything for development
 
 
 ## Architecture

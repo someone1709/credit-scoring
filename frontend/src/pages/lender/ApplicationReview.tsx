@@ -268,6 +268,12 @@ export default function ApplicationReview() {
                         {myDecision.note && <span className="text-xs text-slate-500">{myDecision.note}</span>}
                     </div>
                 )}
+                {myDecision?.applicantReply && (
+                    <div className="mb-4 p-3 bg-[#0d1117] rounded-lg border border-emerald-500/30">
+                        <p className="text-xs font-medium text-slate-500 mb-1">Applicant's reply{myDecision.applicantReplyAt && `, ${new Date(myDecision.applicantReplyAt).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}`}</p>
+                        <p className="text-sm text-slate-200 break-words">{myDecision.applicantReply}</p>
+                    </div>
+                )}
 
                 <ActionError message={actionError} className="mb-4" />
 

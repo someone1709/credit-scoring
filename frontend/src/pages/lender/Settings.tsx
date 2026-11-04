@@ -19,6 +19,7 @@ export default function LenderSettings() {
                         ['Phone', lender.phone],
                         ['NBFC / License Number', lender.licenseNumber],
                         ['Lender ID', lender.id],
+                        ...(lender.approvalStatus ? [['Platform Approval', lender.approvalStatus]] : []),
                     ].map(([label, value]) => (
                         <div key={label} className="flex justify-between items-center gap-3 py-2 border-b border-[#30363d] last:border-0">
                             <span className="text-slate-500 text-sm">{label}</span>

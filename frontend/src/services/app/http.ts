@@ -42,6 +42,8 @@ interface DecisionDto {
     status: LenderDecisionStatus;
     last_updated: string;
     note: string | null;
+    applicant_reply: string | null;
+    applicant_reply_at: string | null;
 }
 
 interface OfferDto {
@@ -129,6 +131,8 @@ function toDecision(dto: DecisionDto): LenderDecision {
         status: dto.status,
         lastUpdated: dto.last_updated,
         note: dto.note,
+        applicantReply: dto.applicant_reply,
+        applicantReplyAt: dto.applicant_reply_at,
     };
 }
 
@@ -249,6 +253,18 @@ export const httpAppService: AppDataService = {
         await call(() => http.post(`/applications/${applicationId}/documents/${documentId}`, form, {
             headers: { 'Content-Type': 'multipart/form-data' },
         }));
+    },
+
+    async deleteDocument(applicationId, documentId) {
+        await call(() => http.delete(`/applications/${applicationId}/documents/${documentId}`));
+    },
+
+    async revokeLender(applicationId, lenderId) {
+        await call(() => http.post(`/applications/${applicationId}/lenders/${lenderId}/revoke`));
+    },
+
+    async replyToLender(applicationId, lenderId, _beneficiaryId, message) {
+        await call(() => http.post(`/applications/${applicationId}/lenders/${lenderId}/reply`, { message }));
     },
 
     async fetchDocumentFile(applicationId, documentId, role) {

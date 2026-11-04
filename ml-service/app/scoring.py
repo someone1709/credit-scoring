@@ -12,7 +12,7 @@ from app.schemas import IncomeBracket, RiskCategory, Segment
 
 def risk_score_from_probability(probability: float) -> int:
     """100 x sqrt(p). It spreads out the low probabilities, and gives 28 for the brief's example of 0.08."""
-    return _clamp(round(100 * math.sqrt(max(0.0, min(1.0, probability)))))
+    return _clamp(_round_half_up(100 * math.sqrt(max(0.0, min(1.0, probability)))))
 
 
 def risk_category(risk_score: int) -> RiskCategory:
@@ -37,7 +37,7 @@ def composite_score(risk: int, monthly_income: float, monthly_expenses: float, e
     """70% inverse risk, 30% affordability, where keeping 50% of income scores full marks."""
     surplus_share = (monthly_income - monthly_expenses - existing_emi) / monthly_income if monthly_income > 0 else 0.0
     affordability = max(0.0, min(100.0, surplus_share * 200))
-    return _clamp(round(0.7 * (100 - risk) + 0.3 * affordability))
+    return _clamp(_round_half_up(0.7 * (100 - risk) + 0.3 * affordability))
 
 
 def segment(composite: int, bracket: IncomeBracket) -> Segment:
@@ -52,6 +52,11 @@ def segment(composite: int, bracket: IncomeBracket) -> Segment:
     if composite >= 30:
         return "SUBPRIME"
     return "HIGH_RISK"
+
+
+def _round_half_up(value: float) -> int:
+    """Python's round() sends halves to the nearest even number. The backend and the website round them up."""
+    return math.floor(value + 0.5)
 
 
 def _clamp(score: int) -> int:

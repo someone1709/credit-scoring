@@ -1,5 +1,6 @@
 package com.creditscore.backend.auth;
 
+import com.creditscore.backend.user.ApprovalStatus;
 import com.creditscore.backend.user.Role;
 import com.fasterxml.jackson.annotation.JsonInclude;
 import jakarta.validation.constraints.AssertTrue;
@@ -64,6 +65,8 @@ public final class AuthDtos {
             @NotNull(message = "Enter a password") @Size(min = 8, max = 72, message = "Use 8 to 72 characters")
             @Pattern(regexp = PASSWORD, message = PASSWORD_MESSAGE) String password) {}
 
+    public record VerifyEmailRequest(@NotBlank(message = "This link is invalid") String token) {}
+
     public record ChangePasswordRequest(
             @NotBlank(message = "Enter your current password") String currentPassword,
             @NotNull(message = "Enter a new password") @Size(min = 8, max = 72, message = "Use 8 to 72 characters")
@@ -85,10 +88,10 @@ public final class AuthDtos {
     public sealed interface UserDto permits BeneficiaryDto, LenderDto {}
 
     public record BeneficiaryDto(String id, Role role, String name, String email, String phone, Integer age,
-                                 String occupation, String address, String city, String state, String pincode) implements UserDto {}
+                                 String occupation, String address, String city, String state, String pincode, boolean emailVerified) implements UserDto {}
 
     public record LenderDto(String id, Role role, String institutionName, String contactPerson, String email,
-                            String phone, String licenseNumber) implements UserDto {}
+                            String phone, String licenseNumber, boolean emailVerified, ApprovalStatus approvalStatus) implements UserDto {}
 
     public record AuthResponse(String accessToken, UserDto user) {}
 }

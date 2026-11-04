@@ -298,7 +298,7 @@ export default function ApplyForLoan() {
                                 <legend className="text-sm font-semibold text-white">Share with lenders</legend>
                                 <p className="text-xs text-slate-500 mt-0.5 mb-3">Only the lenders you choose can open this application.</p>
                                 <ActionError message={lendersError} className="mb-3" />
-                                {!lendersError && lenders.length === 0 && <p className="text-sm text-slate-500 mb-3">No lenders have registered yet.</p>}
+                                {!lendersError && lenders.length === 0 && <p className="text-sm text-slate-500 mb-3">No lenders have been approved yet.</p>}
                                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                                     {lenders.map(lender => (
                                         <label key={lender.id} className="flex items-center gap-3 p-3 bg-[#0d1117] rounded-lg border border-[#30363d] hover:border-slate-500 cursor-pointer transition-colors">

@@ -51,6 +51,8 @@ export type DocumentType =
 
 export type UserRole = 'beneficiary' | 'lender';
 
+export type ApprovalStatus = 'PENDING' | 'APPROVED' | 'REJECTED';
+
 export type LoanPurpose =
     | 'Education'
     | 'Medical'
@@ -75,6 +77,8 @@ export interface BeneficiaryProfile {
     city: string;
     state: string;
     pincode: string;
+    // Only set by the backend. False means they still have to confirm their address.
+    emailVerified?: boolean;
 }
 
 export interface LenderProfile {
@@ -86,6 +90,9 @@ export interface LenderProfile {
     licenseNumber: string;
     logoInitials: string;
     logoColor: string;
+    // Only set by the backend. Demo institutions count as approved.
+    emailVerified?: boolean;
+    approvalStatus?: ApprovalStatus;
 }
 
 export interface CreditAssessmentRequest {
@@ -134,6 +141,9 @@ export interface LenderDecision {
     status: LenderDecisionStatus;
     lastUpdated: string;
     note: string | null;
+    // The applicant's answer when this lender asked for more information.
+    applicantReply?: string | null;
+    applicantReplyAt?: string | null;
 }
 
 export interface LoanOffer {

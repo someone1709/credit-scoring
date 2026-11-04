@@ -30,7 +30,7 @@ export interface LenderRegisterInput extends RegisterBase {
 
 export type RegisterInput = BeneficiaryRegisterInput | LenderRegisterInput;
 
-export type BeneficiaryProfileUpdate = Omit<BeneficiaryProfile, 'id'>;
+export type BeneficiaryProfileUpdate = Omit<BeneficiaryProfile, 'id' | 'emailVerified'>;
 
 export interface PasswordResetRequest {
     /** Only set by the simulated service, which can't send email. A real backend never returns this. */
@@ -51,9 +51,13 @@ export interface AuthService {
     register(input: RegisterInput): Promise<AuthUser>;
     logout(): Promise<void>;
     restoreSession(): Promise<AuthUser | null>;
+    /** The signed-in account as it is now, for changes made elsewhere such as a lender being approved. */
+    currentUser(): Promise<AuthUser | null>;
     requestPasswordReset(email: string): Promise<PasswordResetRequest>;
     resetPassword(token: string, password: string): Promise<void>;
     changePassword(currentPassword: string, newPassword: string): Promise<void>;
+    verifyEmail(token: string): Promise<void>;
+    resendVerification(): Promise<void>;
     updateBeneficiaryProfile(update: BeneficiaryProfileUpdate): Promise<AuthUser>;
     /** Password-free sign-in for the demo accounts. Empty and unusable when connected to a backend. */
     listDemoAccounts(): DemoAccount[];

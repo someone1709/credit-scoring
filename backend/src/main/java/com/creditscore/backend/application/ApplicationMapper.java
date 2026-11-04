@@ -12,6 +12,7 @@ import com.creditscore.backend.user.LenderProfile;
 import com.creditscore.backend.user.Repositories.BeneficiaryProfileRepository;
 import com.creditscore.backend.user.Repositories.LenderProfileRepository;
 import java.time.format.DateTimeFormatter;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.function.Function;
@@ -50,8 +51,11 @@ class ApplicationMapper {
                 !closed);
     }
 
+    /** Offers stay on record after a lender's access is removed, so they still need that lender's name. */
     private Map<String, LenderProfile> lenderProfiles(LoanApplication app) {
-        List<String> ids = app.getLenderDecisions().stream().map(LenderDecision::getLenderId).toList();
+        Set<String> ids = new HashSet<>();
+        app.getLenderDecisions().forEach(decision -> ids.add(decision.getLenderId()));
+        app.getOffers().forEach(offer -> ids.add(offer.getLenderId()));
         return lenders.findAllById(ids).stream().collect(Collectors.toMap(LenderProfile::getUserId, Function.identity()));
     }
 
@@ -101,7 +105,7 @@ class ApplicationMapper {
 
     private static DecisionDto decision(LenderDecision decision, LoanApplication app, Map<String, LenderProfile> profiles) {
         return new DecisionDto(decision.getLenderId(), profiles.get(decision.getLenderId()).getInstitutionName(), app.getId(),
-                decision.getStatus(), decision.getLastUpdated(), decision.getNote());
+                decision.getStatus(), decision.getLastUpdated(), decision.getNote(), decision.getApplicantReply(), decision.getApplicantReplyAt());
     }
 
     private static OfferDto offer(LoanOffer offer, LoanApplication app, Map<String, LenderProfile> profiles) {

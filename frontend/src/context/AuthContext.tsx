@@ -3,7 +3,9 @@ import type { AuthUser, BeneficiaryProfileUpdate, LoginInput, RegisterInput } fr
 import { authService } from '@/services/auth';
 import { SESSION_KEY } from '@/services/auth/mock';
 import { setSessionExpiredHandler } from '@/services/http';
-import { AuthContext, type AuthContextValue } from './useAuth';
+import { AuthContext, isAwaitingAccountChange, type AuthContextValue } from './useAuth';
+
+const ACCOUNT_CHECK_EVERY_MS = 30000;
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
     const [user, setUser] = useState<AuthUser | null>(null);
@@ -38,6 +40,28 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         window.addEventListener('storage', onStorage);
         return () => window.removeEventListener('storage', onStorage);
     }, []);
+
+    const refreshUser = useCallback(async () => {
+        try {
+            const latest = await authService.currentUser();
+            if (latest) setUser(latest);
+        } catch {
+            // Keeps what's on screen. The next check can succeed.
+        }
+    }, []);
+
+    // Someone waiting for approval or a confirmed email shouldn't have to reload to see it.
+    const awaiting = isAwaitingAccountChange(user);
+    useEffect(() => {
+        if (!awaiting) return;
+        const check = () => void refreshUser();
+        const timer = window.setInterval(check, ACCOUNT_CHECK_EVERY_MS);
+        window.addEventListener('focus', check);
+        return () => {
+            window.clearInterval(timer);
+            window.removeEventListener('focus', check);
+        };
+    }, [awaiting, refreshUser]);
 
     const login = useCallback(async (input: LoginInput) => {
         const signedIn = await authService.login(input);
@@ -89,7 +113,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         logout,
         demoLogin,
         updateBeneficiaryProfile,
-    }), [user, loading, sessionEnded, clearSessionEnded, login, register, logout, demoLogin, updateBeneficiaryProfile]);
+        refreshUser,
+    }), [user, loading, sessionEnded, clearSessionEnded, login, register, logout, demoLogin, updateBeneficiaryProfile, refreshUser]);
 
     return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }
