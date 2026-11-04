@@ -13,11 +13,12 @@ npm install
 npm run dev
 ```
 
-Open the address Vite prints. No backend is needed.
+Open the address Vite prints. This runs on demo data in your browser, so no backend is needed.
 
 | Command | What it does |
 |---|---|
-| `npm run dev` | Starts the dev server |
+| `npm run dev` | Starts the dev server on demo data, with no backend needed |
+| `npm run dev:live` | Starts the dev server against the real backend |
 | `npm run build` | Type-checks and builds for production into `dist/` |
 | `npm run typecheck` | Runs the TypeScript compiler |
 | `npm run lint` | Runs Oxlint |
@@ -55,64 +56,32 @@ src/
 ├── pages/             Screens, by role
 ├── services/
 │   ├── http.ts        Axios client, tokens, refresh and error handling
-│   └── auth/          The mock and backend sign-in clients
+│   ├── auth/          The mock and backend sign-in clients
+│   └── app/           The mock and backend clients for applications, offers and documents
 └── types/             Shared types, including the fixed contract from the brief
 ```
 
-`lib/workflow.ts` is plain functions with no React, so the backend team can use it as a reference for the same rules.
+`lib/workflow.ts` is plain functions with no React. The backend enforces the same rules, and it's the one that counts in live mode.
 
-## Connecting the backend
+## Running with the backend
 
-Authentication is ready to connect. Screens only use the `AuthService` interface in `src/types/auth.ts`, so no screen changes when the backend arrives. Copy `.env.example` to `.env.local` and set:
+Start the API first (see [`backend/README.md`](../backend/README.md)), then run:
 
 ```bash
-VITE_API_MODE=live
-VITE_API_BASE_URL=http://localhost:8080/api/v1
+npm run dev:live
 ```
 
-This turns off the demo accounts and the role switcher. The wire format lives only in `src/services/auth/http.ts`.
+This opens on <http://localhost:5175> and uses the real API and database, with the settings in `.env.live`. Demo accounts and the role switcher turn off, so sign in with a real account.
 
-| Request | Body | Success |
-|---|---|---|
-| `POST /auth/login` | `email, password, remember_me` | `AuthResponse` |
-| `POST /auth/register` | `role, email, phone, password`, plus `name` for a beneficiary or `institution_name, contact_person, license_number` for a lender | `AuthResponse` |
-| `POST /auth/refresh` | none; uses the cookie | `AuthResponse` |
-| `POST /auth/logout` | none | any 2xx |
-| `POST /auth/forgot-password` | `email` | any 2xx, even for an unknown email |
-| `POST /auth/reset-password` | `token, password` | any 2xx |
-| `POST /auth/change-password` | `current_password, new_password` | any 2xx |
-| `PATCH /auth/me` | `name, email, phone, age, occupation, address, city, state, pincode` | the user |
-
-`AuthResponse` is `{ "access_token": "...", "user": User }`, and a `User` is one of:
-
-```json
-{ "id": "BEN1", "role": "beneficiary", "name": "", "email": "", "phone": "", "age": null, "occupation": null, "address": null, "city": null, "state": null, "pincode": null }
-{ "id": "LEN1", "role": "lender", "institution_name": "", "contact_person": "", "email": "", "phone": "", "license_number": "" }
-```
-
-What the backend needs to do:
-
-- **Tokens:** send the short-lived access token in the response body; the frontend keeps it in memory and sends `Authorization: Bearer`. Keep the refresh token in an `httpOnly` cookie, and allow credentials in CORS for the frontend's origin. On a 401, the frontend refreshes once and retries the request.
-- **Errors:** use the shape from brief §6.7. A `details` entry with a known `field` appears on that input; anything else appears above the form. The field names are the snake_case names above.
-
-  ```json
-  { "error": "VALIDATION_ERROR", "message": "Invalid input", "details": [{ "field": "email", "issue": "Already registered" }] }
-  ```
-
-- **A wrong password** returns 401 from `/auth/login`, and 422 with a `current_password` detail from `/auth/change-password`, so it isn't mistaken for an expired session.
-- **Forgot password** must answer the same way whether or not the account exists.
-
-### Not connected yet
-
-Only authentication has a backend client. Applications, offers, documents and notifications still run on `AppContext` and demo data in both modes, and the list of lenders comes from the mock. In live mode, a new account therefore sees an empty dashboard until those are connected. Use `lib/workflow.ts` as the reference when you build them, and enforce the access rules on the server, because the browser's checks can be bypassed.
+Screens only use two interfaces, `AuthService` (`src/types/auth.ts`) and `AppDataService` (`src/types/appService.ts`). Each has a mock and a backend client under `src/services/`, so no screen knows which one it's using. The wire format lives only in the two `http.ts` files.
 
 ## What is simulated
 
 | Feature | In this build |
 |---|---|
-| Sign-in | Accounts live in this browser with salted password hashes. This is not secure, so don't use a real password. Password-reset email isn't sent; a labelled link appears on screen instead |
+| Sign-in, demo mode only | Accounts live in this browser with salted password hashes. This is not secure, so don't use a real password. Password-reset email isn't sent; a labelled link appears on screen instead |
 | Credit assessment | A rule-based points system, not a trained model. `probability_of_default` and `model_confidence` are always `null` and shown as Unavailable |
-| Document checks | File type and size only. Only the file's name is kept, and the file never leaves the browser |
+| Document checks | File type and size only. Only the file's name is kept. In demo mode the file never leaves the browser; in live mode the backend also checks its contents, then discards it |
 | Disbursement and repayments | The lender moves the steps by hand, and schedules are calculated. No money moves and no payments are recorded |
 
 ## Assumptions to confirm

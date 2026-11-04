@@ -14,9 +14,10 @@ function formatDate(iso: string) {
     return new Date(iso).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
 }
 
-function OfferCard({ offer, highlights, onAccept, onDecline }: {
+function OfferCard({ offer, highlights, busy = false, onAccept, onDecline }: {
     offer: LoanOffer;
     highlights?: string[];
+    busy?: boolean;
     onAccept?: () => void;
     onDecline?: () => void;
 }) {
@@ -93,13 +94,15 @@ function OfferCard({ offer, highlights, onAccept, onDecline }: {
                 <div className="flex gap-2 mt-2">
                     <button
                         onClick={onAccept}
-                        className="flex-1 py-2 bg-emerald-500 hover:bg-emerald-600 text-white rounded-lg text-sm font-semibold transition-colors"
+                        disabled={busy}
+                        className="flex-1 py-2 bg-emerald-500 hover:bg-emerald-600 disabled:opacity-60 text-white rounded-lg text-sm font-semibold transition-colors"
                     >
                         Accept Offer
                     </button>
                     <button
                         onClick={onDecline}
-                        className="flex-1 py-2 bg-red-500/15 hover:bg-red-500/25 border border-red-500/30 text-red-400 rounded-lg text-sm font-medium transition-colors"
+                        disabled={busy}
+                        className="flex-1 py-2 bg-red-500/15 hover:bg-red-500/25 disabled:opacity-60 border border-red-500/30 text-red-400 rounded-lg text-sm font-medium transition-colors"
                     >
                         Decline
                     </button>
@@ -137,13 +140,17 @@ export default function LoanOffers() {
     const apps = getApplicationsByBeneficiary(beneficiary.id);
     const [confirmAccept, setConfirmAccept] = useState<LoanOffer | null>(null);
     const [error, setError] = useState<string | null>(null);
+    const [busy, setBusy] = useState(false);
 
-    const run = (action: () => void) => {
+    const run = async (action: () => Promise<void>) => {
         setError(null);
+        setBusy(true);
         try {
-            action();
+            await action();
         } catch (e) {
             setError(e instanceof Error ? e.message : 'Something went wrong. Please try again.');
+        } finally {
+            setBusy(false);
         }
     };
 
@@ -193,8 +200,9 @@ export default function LoanOffers() {
                                     key={offer.id}
                                     offer={offer}
                                     highlights={highlights.get(offer.id)}
+                                    busy={busy}
                                     onAccept={() => setConfirmAccept(offer)}
-                                    onDecline={() => run(() => declineOffer(offer.id, offer.applicationId, beneficiary.id))}
+                                    onDecline={() => void run(() => declineOffer(offer.id, offer.applicationId, beneficiary.id))}
                                 />
                             ))}
                         </div>
@@ -232,7 +240,7 @@ export default function LoanOffers() {
                                 onClick={() => {
                                     const offer = confirmAccept;
                                     setConfirmAccept(null);
-                                    run(() => acceptOffer(offer.id, offer.applicationId, beneficiary.id));
+                                    void run(() => acceptOffer(offer.id, offer.applicationId, beneficiary.id));
                                 }}
                                 className="flex-1 py-2.5 bg-emerald-500 hover:bg-emerald-600 text-white rounded-lg text-sm font-semibold transition-colors"
                             >

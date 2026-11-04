@@ -1,4 +1,4 @@
-import { useMemo, useState, type FormEvent } from 'react';
+import { useEffect, useState, type FormEvent } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -7,7 +7,7 @@ import { isProfileComplete, useBeneficiary } from '@/context/useAuth';
 import { useApp } from '@/context/useApp';
 import { ActionError, Card, DemoDisclaimer } from '@/components/shared/UI';
 import { dtiPercent, expenseRatioPercent, monthlySurplus } from '@/lib/finance';
-import { listLenders } from '@/services/auth/mock';
+import type { LenderOption } from '@/types/appService';
 import { ChevronRight, ChevronLeft, CheckCircle, Loader2, UserCheck } from 'lucide-react';
 
 const REQUIRED_MESSAGE = 'This field is required';
@@ -61,9 +61,10 @@ const selectCls = inputCls + ' cursor-pointer';
 
 export default function ApplyForLoan() {
     const beneficiary = useBeneficiary();
-    const { submitApplication } = useApp();
+    const { submitApplication, listLenders } = useApp();
     const navigate = useNavigate();
-    const lenders = useMemo(() => listLenders(), []);
+    const [lenders, setLenders] = useState<LenderOption[]>([]);
+    const [lendersError, setLendersError] = useState<string | null>(null);
     const [step, setStep] = useState(0);
     const [submitting, setSubmitting] = useState(false);
     const [submitted, setSubmitted] = useState(false);
@@ -83,6 +84,12 @@ export default function ApplyForLoan() {
         mode: 'onChange',
     });
 
+    useEffect(() => {
+        listLenders()
+            .then(setLenders)
+            .catch((e: unknown) => setLendersError(e instanceof Error ? e.message : 'The list of lenders could not be loaded.'));
+    }, [listLenders]);
+
     const values = watch();
 
     const nextStep = async () => {
@@ -96,10 +103,9 @@ export default function ApplyForLoan() {
     const onSubmit = async (data: FormData) => {
         setSubmitting(true);
         setSubmitError(null);
-        await new Promise(r => setTimeout(r, 800));
         try {
             const { lender_ids: lenderIds, consent: _consent, ...financials } = data;
-            const app = submitApplication(beneficiary, financials, lenders.filter(l => lenderIds.includes(l.id)));
+            const app = await submitApplication(beneficiary, financials, lenderIds);
             setNewAppId(app.id);
             setSubmitted(true);
         } catch (e) {
@@ -291,6 +297,8 @@ export default function ApplyForLoan() {
                             <fieldset className="pt-2">
                                 <legend className="text-sm font-semibold text-white">Share with lenders</legend>
                                 <p className="text-xs text-slate-500 mt-0.5 mb-3">Only the lenders you choose can open this application.</p>
+                                <ActionError message={lendersError} className="mb-3" />
+                                {!lendersError && lenders.length === 0 && <p className="text-sm text-slate-500 mb-3">No lenders have registered yet.</p>}
                                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                                     {lenders.map(lender => (
                                         <label key={lender.id} className="flex items-center gap-3 p-3 bg-[#0d1117] rounded-lg border border-[#30363d] hover:border-slate-500 cursor-pointer transition-colors">

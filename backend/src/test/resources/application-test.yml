@@ -1,0 +1,16 @@
+# Runs without MySQL. Hibernate builds the tables here because H2 doesn't support all of schema.sql.
+spring:
+  datasource:
+    url: jdbc:h2:mem:benescore;MODE=MySQL;DB_CLOSE_DELAY=-1
+    username: sa
+    password: ""
+  sql:
+    init:
+      mode: never
+  jpa:
+    hibernate:
+      ddl-auto: create-drop
+
+app:
+  jwt:
+    secret: test-only-secret-that-is-long-enough-for-hs256

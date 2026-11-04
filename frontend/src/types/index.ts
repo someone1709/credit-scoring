@@ -191,6 +191,9 @@ export interface LoanApplication {
 
     // Disbursement (mock)
     disbursementSteps: DisbursementStep[];
+
+    // Set for a lender when another lender's offer was accepted. It says the application closed, never who won.
+    closedToLender?: boolean;
 }
 
 export interface Notification {

@@ -5,6 +5,7 @@ build/
 .env
 .env.*
 !.env.example
+!.env.live
 .venv/
 venv/
 __pycache__/

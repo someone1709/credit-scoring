@@ -14,13 +14,17 @@ export default function MyOffers() {
     const { getOffersByLender, getLenderApplication, withdrawOffer } = useApp();
     const offers = getOffersByLender(lender.id);
     const [error, setError] = useState<string | null>(null);
+    const [busy, setBusy] = useState(false);
 
-    const withdraw = (applicationId: string, offerId: string) => {
+    const withdraw = async (applicationId: string, offerId: string) => {
         setError(null);
+        setBusy(true);
         try {
-            withdrawOffer(applicationId, lender, offerId);
+            await withdrawOffer(applicationId, lender, offerId);
         } catch (e) {
             setError(e instanceof Error ? e.message : 'Something went wrong. Please try again.');
+        } finally {
+            setBusy(false);
         }
     };
 
@@ -63,7 +67,7 @@ export default function MyOffers() {
                                                         View App →
                                                     </Link>
                                                     {o.status === 'PENDING' && (
-                                                        <button onClick={() => withdraw(o.applicationId, o.id)} className="text-red-400 hover:text-red-300 text-xs font-medium transition-colors">
+                                                        <button onClick={() => void withdraw(o.applicationId, o.id)} disabled={busy} className="text-red-400 hover:text-red-300 disabled:opacity-50 text-xs font-medium transition-colors">
                                                             Withdraw
                                                         </button>
                                                     )}

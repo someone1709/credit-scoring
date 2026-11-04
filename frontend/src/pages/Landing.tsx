@@ -27,16 +27,21 @@ const simulatedDisbursed = MOCK_APPLICATIONS
     .flatMap(app => app.offers.filter(offer => offer.status === 'ACCEPTED'))
     .reduce((sum, offer) => sum + offer.amount, 0);
 
-const stats = [
+const demoStats = [
     { value: `₹${(simulatedDisbursed / 100000).toFixed(1)}L`, label: 'Simulated Disbursed' },
     { value: String(MOCK_LENDERS.length), label: 'Demo Lenders' },
+];
+
+const platformStats = [
     { value: 'Every', label: 'Score Explained' },
     { value: '0', label: 'CIBIL Required' },
 ];
 
 export default function LandingPage() {
     const navigate = useNavigate();
-    const { user } = useAuth();
+    const { user, isMockMode } = useAuth();
+    // The demo numbers say nothing about a real database, so they only show in demo mode.
+    const stats = isMockMode ? [...demoStats, ...platformStats] : platformStats;
 
     const enter = (role: 'beneficiary' | 'lender') => {
         navigate(user?.role === role ? homeForRole(role) : `/login?role=${role}`);
@@ -117,7 +122,7 @@ export default function LandingPage() {
 
             {/* Stats */}
             <section className="relative max-w-4xl mx-auto px-6 pb-16">
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+                <div className={`grid grid-cols-2 gap-4 ${isMockMode ? 'sm:grid-cols-4' : ''}`}>
                     {stats.map(({ value, label }) => (
                         <div key={label} className="text-center p-5 bg-[#161b22] border border-[#30363d] rounded-xl">
                             <p className="text-2xl font-black text-emerald-400">{value}</p>
