@@ -80,7 +80,7 @@ Screens only use two interfaces, `AuthService` (`src/types/auth.ts`) and `AppDat
 | Feature | In this build |
 |---|---|
 | Sign-in, demo mode only | Accounts live in this browser with salted password hashes. This is not secure, so don't use a real password. Password-reset email isn't sent; a labelled link appears on screen instead |
-| Credit assessment | A rule-based points system, not a trained model. `probability_of_default` and `model_confidence` are always `null` and shown as Unavailable |
+| Credit assessment | In demo mode, a rule-based points system. In live mode, a model trained on synthetic data and not validated on real borrowers, or the same rules if the ML service is down. Each result shows which. `model_confidence` is always shown as Unavailable |
 | Document checks | File type and size only. Only the file's name is kept. In demo mode the file never leaves the browser; in live mode the backend also checks its contents, then discards it |
 | Disbursement and repayments | The lender moves the steps by hand, and schedules are calculated. No money moves and no payments are recorded |
 
@@ -90,6 +90,7 @@ The brief requires these outputs but doesn't define the rules, so the team shoul
 
 | Topic | Current rule | Where |
 |---|---|---|
+| Risk score from the model | 100 x sqrt(probability), which gives 28 for the brief's example of 0.08 | `ml-service/app/scoring.py` |
 | Risk category | `LOW` up to 30, `MEDIUM` up to 60, `HIGH` above that | `lib/assessment.ts` |
 | Income bracket | `LOW_INCOME` below ₹25,000, `MID_INCOME` from ₹25,000, `HIGH_INCOME` from ₹50,000 | `lib/assessment.ts` |
 | Composite score | 70% inverse risk, 30% affordability (50% of income left scores 100) | `lib/assessment.ts` |

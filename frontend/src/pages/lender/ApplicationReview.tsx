@@ -5,7 +5,7 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { useLender } from '@/context/useAuth';
 import { useApp } from '@/context/useApp';
-import { ActionError, Card, InfoRow, DemoDisclaimer } from '@/components/shared/UI';
+import { ActionError, AssessmentNote, Card, InfoRow, DemoDisclaimer } from '@/components/shared/UI';
 import { StatusBadge } from '@/components/shared/StatusBadge';
 import { ScoreGauge } from '@/components/shared/ScoreGauge';
 import { calculateEmi, dtiPercent, expenseRatioPercent, monthlySurplus } from '@/lib/finance';
@@ -203,7 +203,7 @@ export default function ApplicationReview() {
                                 ))}
                             </ul>
                         </div>
-                        <p className="text-xs text-slate-600 mt-3">Illustrative rule-based decision support. It is not a trained model, and the decision is yours.</p>
+                        <AssessmentNote method={ass.explanation_method} audience="lender" />
                     </Card>
                 )}
             </div>

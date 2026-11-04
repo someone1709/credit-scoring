@@ -3,7 +3,7 @@ import { HelpCircle, Mail, BookOpen, MessageCircle } from 'lucide-react';
 
 const faqs = [
     { q: 'What is BeneScore?', a: 'BeneScore is an academic prototype of an AI-powered digital lending platform that connects beneficiaries with independent lenders using alternative credit scoring.' },
-    { q: 'How is my credit score calculated?', a: 'The score uses rule-based financial indicators including your debt-to-income ratio, expense-to-income ratio, monthly surplus, and repayment history. It is illustrative only.' },
+    { q: 'How is my credit score calculated?', a: 'The score uses your debt-to-income ratio, expense-to-income ratio, monthly surplus, loan size and repayment history. It comes from fixed rules or a model trained on synthetic data, and each assessment says which. It is illustrative only.' },
     { q: 'Does "no repayment history" hurt my score?', a: 'No. First-time borrowers with no history are not penalised. The system explicitly distinguishes between no history and poor history.' },
     { q: 'Can multiple lenders review my application?', a: 'Yes. Multiple lenders can independently review your application. One rejection does not affect other lenders\' assessments.' },
     { q: 'Who can see my application?', a: 'Only the lenders you choose when you apply. Other lenders cannot open it, and lenders never see your email, phone number or address.' },

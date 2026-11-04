@@ -1,7 +1,7 @@
 import { useParams, Link } from 'react-router-dom';
 import { useApp } from '@/context/useApp';
 import { useBeneficiary } from '@/context/useAuth';
-import { Card, InfoRow, DemoDisclaimer } from '@/components/shared/UI';
+import { AssessmentNote, Card, InfoRow, DemoDisclaimer } from '@/components/shared/UI';
 import { StatusBadge } from '@/components/shared/StatusBadge';
 import { ScoreGauge } from '@/components/shared/ScoreGauge';
 import { ApplicationWorkflowStepper, DisbursementStepper } from '@/components/shared/Stepper';
@@ -106,7 +106,7 @@ export default function ApplicationDetail() {
                                 ))}
                             </ul>
                         </div>
-                        <p className="text-xs text-slate-600 mt-3">Illustrative rule-based result, not a trained model and not a lending decision. Lenders make their own decisions.</p>
+                        <AssessmentNote method={assessment.explanation_method} audience="beneficiary" />
                     </Card>
                 )}
             </div>

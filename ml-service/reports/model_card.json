@@ -1,0 +1,160 @@
+{
+  "model_name": "logistic_regression",
+  "selection_reason": "Gradient boosting didn't beat logistic regression by the required 0.001 log loss on validation (it changed log loss by +0.0010), so the simpler, easier-to-explain model stays.",
+  "trained_on": "synthetic",
+  "trained_at": "2026-11-04T17:12:03+00:00",
+  "seed": 42,
+  "sklearn_version": "1.9.1",
+  "shap_version": "0.54.1",
+  "rows": {
+    "total": 20000,
+    "train": 14000,
+    "validation": 3000,
+    "test": 3000
+  },
+  "synthetic_history_effect": {
+    "good": -0.7,
+    "none": 0.0,
+    "average": 0.45,
+    "poor": 1.3
+  },
+  "validation_metrics": {
+    "logistic_regression": {
+      "auc": 0.7094893417692114,
+      "log_loss": 0.2868009321020312,
+      "brier": 0.07977658703761178,
+      "accuracy_at_0_5": 0.905,
+      "base_rate": 0.09633333333333334
+    },
+    "gradient_boosting": {
+      "auc": 0.7030520281973098,
+      "log_loss": 0.28780288554752054,
+      "brier": 0.07982989806435073,
+      "accuracy_at_0_5": 0.9056666666666666,
+      "base_rate": 0.09633333333333334
+    }
+  },
+  "test_metrics": {
+    "auc": 0.7318783800393314,
+    "log_loss": 0.283028221634957,
+    "brier": 0.07948599418227015,
+    "accuracy_at_0_5": 0.907,
+    "base_rate": 0.096
+  },
+  "calibration": [
+    {
+      "rows": 300,
+      "mean_predicted": 0.027608548432579205,
+      "observed": 0.02666666666666667
+    },
+    {
+      "rows": 300,
+      "mean_predicted": 0.03625151449196852,
+      "observed": 0.03
+    },
+    {
+      "rows": 300,
+      "mean_predicted": 0.04333283392806017,
+      "observed": 0.04
+    },
+    {
+      "rows": 300,
+      "mean_predicted": 0.05066473717909804,
+      "observed": 0.05333333333333334
+    },
+    {
+      "rows": 300,
+      "mean_predicted": 0.05814124311529369,
+      "observed": 0.07333333333333333
+    },
+    {
+      "rows": 300,
+      "mean_predicted": 0.06772536253123503,
+      "observed": 0.04666666666666667
+    },
+    {
+      "rows": 300,
+      "mean_predicted": 0.08287929556294375,
+      "observed": 0.09666666666666666
+    },
+    {
+      "rows": 300,
+      "mean_predicted": 0.11376193309726583,
+      "observed": 0.11666666666666667
+    },
+    {
+      "rows": 300,
+      "mean_predicted": 0.16739459288359146,
+      "observed": 0.21333333333333335
+    },
+    {
+      "rows": 300,
+      "mean_predicted": 0.30060974442953486,
+      "observed": 0.2633333333333333
+    }
+  ],
+  "calibration_ece": 0.014935286864185172,
+  "by_history": [
+    {
+      "group": "average",
+      "rows": 665,
+      "observed_default": 0.15789473684210525,
+      "mean_predicted": 0.14757829788763296,
+      "auc": 0.6309013605442177
+    },
+    {
+      "group": "good",
+      "rows": 1375,
+      "observed_default": 0.05381818181818182,
+      "mean_predicted": 0.05763675541190398,
+      "auc": 0.6963458462305503
+    },
+    {
+      "group": "none",
+      "rows": 725,
+      "observed_default": 0.06896551724137931,
+      "mean_predicted": 0.06473762550136954,
+      "auc": 0.5582222222222223
+    },
+    {
+      "group": "poor",
+      "rows": 235,
+      "observed_default": 0.251063829787234,
+      "mean_predicted": 0.2561108783844015,
+      "auc": 0.5929314329738058
+    }
+  ],
+  "by_income": [
+    {
+      "group": "HIGH_INCOME",
+      "rows": 494,
+      "observed_default": 0.07894736842105263,
+      "mean_predicted": 0.0887688937890287,
+      "auc": 0.7612285150746689
+    },
+    {
+      "group": "LOW_INCOME",
+      "rows": 1252,
+      "observed_default": 0.09904153354632587,
+      "mean_predicted": 0.1009093217508787,
+      "auc": 0.7247840883093114
+    },
+    {
+      "group": "MID_INCOME",
+      "rows": 1254,
+      "observed_default": 0.09968102073365231,
+      "mean_predicted": 0.09116478256107725,
+      "auc": 0.7282267493356952
+    }
+  ],
+  "coefficients": {
+    "dti": 2.8200130530283074,
+    "expense_ratio": 1.5520665722389195,
+    "low_surplus": 0.803459753624917,
+    "loan_to_annual_income": 0.44787610769801395,
+    "repayment_good": -0.5961700154913906,
+    "repayment_average": 0.5089291399270685,
+    "repayment_poor": 1.2735830402686166,
+    "intercept": -3.640789666855927
+  }
+}
