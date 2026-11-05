@@ -16,7 +16,7 @@ import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.List;
 
-/** The wire format of the lending routes. Must match frontend/src/services/app/http.ts. */
+/** The wire format of the lending routes. Must match frontend/src/services/app/http.js. */
 public final class ApplicationDtos {
 
     // Catches typing mistakes. It isn't a lending rule.

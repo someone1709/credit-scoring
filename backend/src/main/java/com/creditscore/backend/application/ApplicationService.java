@@ -41,7 +41,7 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
 
 /**
- * The lending workflow. These rules match frontend/src/lib/workflow.ts, and the server is what enforces them:
+ * The lending workflow. These rules match frontend/src/lib/workflow.js, and the server is what enforces them:
  * one lender can't affect another, and nobody reaches data that isn't theirs.
  */
 @Slf4j

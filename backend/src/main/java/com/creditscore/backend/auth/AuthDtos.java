@@ -12,7 +12,7 @@ import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
 
-/** The wire format of the auth routes. Must match frontend/src/services/auth/http.ts. */
+/** The wire format of the auth routes. Must match frontend/src/services/auth/http.js. */
 public final class AuthDtos {
 
     private static final String PHONE = "^\\+?[0-9][0-9\\s-]{8,14}$";

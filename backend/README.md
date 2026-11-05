@@ -162,6 +162,6 @@ To change something, add the next script, such as `V3__add_something.sql`. Never
 
 Set `ML_SERVICE_URL` in `.env` to where [`ml-service`](../ml-service/README.md) runs. `MlAssessmentProvider` sends it the fixed contract from brief §6, checks the answer, and always sets `verification_status` itself from the application's documents.
 
-If the setting is empty, or the service is down, slow (over 3 seconds) or gives an invalid answer, `RuleBasedAssessmentProvider` takes over and the result says `RULE_BASED`, with no probability. Applying keeps working, and nothing is passed off as a model's output. The rules match `frontend/src/lib/assessment.ts`.
+If the setting is empty, or the service is down, slow (over 3 seconds) or gives an invalid answer, `RuleBasedAssessmentProvider` takes over and the result says `RULE_BASED`, with no probability. Applying keeps working, and nothing is passed off as a model's output. The rules match `frontend/src/lib/assessment.js`.
 
 The scoring thresholds are still placeholders for the team to confirm. They're listed under "Assumptions to confirm" in the [frontend README](../frontend/README.md).

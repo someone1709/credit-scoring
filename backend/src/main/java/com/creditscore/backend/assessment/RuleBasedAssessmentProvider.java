@@ -13,7 +13,7 @@ import java.util.Locale;
 import org.springframework.stereotype.Component;
 
 /**
- * Illustrative rules, used when the ML service is off or fails. They match frontend/src/lib/assessment.ts.
+ * Illustrative rules, used when the ML service is off or fails. They match frontend/src/lib/assessment.js.
  * probability_of_default and model_confidence stay null because no model produced them (Master Brief §6.5).
  * Every threshold is a placeholder for the team to confirm.
  */

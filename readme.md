@@ -10,7 +10,7 @@ Traditional lending relies heavily on credit history, which excludes first-time 
 ## Project Status
 | Layer | Status |
 |---|---|
-| Frontend (React + TS + Tailwind) | Built, runs on demo data or the backend |
+| Frontend (React + JavaScript + Tailwind) | Built, runs on demo data or the backend |
 | Backend (Spring Boot + MySQL) | Built, with labelled rule-based scoring if the ML service is down |
 | ML service (FastAPI) | Built, trained on synthetic data only |
 | Integration | Frontend, backend and ML service connected |
@@ -66,7 +66,7 @@ This is an academic prototype on synthetic data, so don't host it for real borro
 - `verification_status`: DEMO_UNVERIFIED | DOCUMENT_UPLOADED | CHECKS_PASSED | CHECKS_FAILED | NOT_PROVIDED
 
 ## Tech Stack
-React, TypeScript, Tailwind CSS, Recharts | Java 21, Spring Boot | Python, FastAPI, scikit-learn | MySQL | Git, GitHub
+React, JavaScript, Tailwind CSS, Recharts | Java 21, Spring Boot | Python, FastAPI, scikit-learn | MySQL | Git, GitHub
 
 ## Workflow
 1. Beneficiary submits a loan request and optional documents.
