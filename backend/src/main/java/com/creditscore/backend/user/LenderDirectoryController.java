@@ -18,6 +18,7 @@ class LenderDirectoryController {
     @GetMapping("/lenders")
     List<LenderSummary> list() {
         return lenders.findAll().stream()
+                .filter(LenderProfile::isApproved)
                 .sorted(Comparator.comparing(LenderProfile::getInstitutionName, String.CASE_INSENSITIVE_ORDER))
                 .map(lender -> new LenderSummary(lender.getUserId(), lender.getInstitutionName(), lender.logoInitials(), lender.getLogoColor()))
                 .toList();

@@ -2,6 +2,8 @@ package com.creditscore.backend.user;
 
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 import lombok.Getter;
@@ -28,6 +30,15 @@ public class LenderProfile {
 
     @Column(name = "logo_color", nullable = false)
     private String logoColor;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "approval_status", nullable = false)
+    private ApprovalStatus approvalStatus;
+
+    /** Only an approved institution can be chosen by applicants or see their data. */
+    public boolean isApproved() {
+        return approvalStatus == ApprovalStatus.APPROVED;
+    }
 
     public String logoInitials() {
         return Initials.of(institutionName);

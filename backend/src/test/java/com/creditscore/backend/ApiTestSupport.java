@@ -4,6 +4,8 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 
+import com.creditscore.backend.user.ApprovalStatus;
+import com.creditscore.backend.user.Repositories;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.servlet.http.Cookie;
@@ -33,6 +35,9 @@ abstract class ApiTestSupport {
 
     @Autowired
     ObjectMapper json;
+
+    @Autowired
+    Repositories.LenderProfileRepository lenderProfiles;
 
     record Account(String id, String token, Cookie refreshCookie, String email) {}
 
@@ -69,9 +74,18 @@ abstract class ApiTestSupport {
         return new Account(node.at("/user/id").asText(), node.get("access_token").asText(), response.getCookie("refresh_token"), node.at("/user/email").asText());
     }
 
-    Account newLender(String name) throws Exception {
+    /** A lender the platform hasn't approved yet, as every lender starts. */
+    Account newPendingLender(String name) throws Exception {
         return signedUp(Map.of("role", "lender", "email", uniqueEmail(), "phone", "9876543210", "password", PASSWORD,
                 "institution_name", name, "contact_person", "Contact Person", "license_number", "LIC-1"));
+    }
+
+    Account newLender(String name) throws Exception {
+        Account lender = newPendingLender(name);
+        var profile = lenderProfiles.findById(lender.id()).orElseThrow();
+        profile.setApprovalStatus(ApprovalStatus.APPROVED);
+        lenderProfiles.save(profile);
+        return lender;
     }
 
     Account newBeneficiary() throws Exception {

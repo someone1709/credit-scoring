@@ -5,6 +5,7 @@ import jakarta.validation.Valid;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -30,6 +31,11 @@ class LenderApplicationController {
     @GetMapping("/{id}")
     ApplicationDto get(@AuthenticationPrincipal Jwt jwt, @PathVariable String id) {
         return applications.getForLender(jwt.getSubject(), id);
+    }
+
+    @GetMapping("/{id}/documents/{documentId}/file")
+    ResponseEntity<byte[]> file(@AuthenticationPrincipal Jwt jwt, @PathVariable String id, @PathVariable String documentId) {
+        return DocumentResponses.of(applications.documentForLender(jwt.getSubject(), id, documentId));
     }
 
     @PostMapping("/{id}/decision")

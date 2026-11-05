@@ -37,7 +37,7 @@ class DemoDataSeeder implements ApplicationRunner {
 
         for (AuthDtos.RegisterRequest account : accounts) {
             if (!users.existsByEmail(account.email())) {
-                auth.register(account);
+                auth.registerDemoAccount(account);
                 log.info("Created demo account {}", account.email());
             }
         }

@@ -5,8 +5,11 @@ import com.creditscore.backend.auth.AuthDtos.BeneficiaryDto;
 import com.creditscore.backend.auth.AuthDtos.LenderDto;
 import com.creditscore.backend.auth.AuthDtos.UserDto;
 import com.creditscore.backend.common.ApiException;
+import com.creditscore.backend.common.AttemptLimiter;
 import com.creditscore.backend.common.Ids;
+import com.creditscore.backend.common.Mailer;
 import com.creditscore.backend.config.AppProperties;
+import com.creditscore.backend.user.ApprovalStatus;
 import com.creditscore.backend.user.BeneficiaryProfile;
 import com.creditscore.backend.user.LenderProfile;
 import com.creditscore.backend.user.Repositories.BeneficiaryProfileRepository;
@@ -38,6 +41,13 @@ public class AuthService {
     /** A second tab can refresh with the same cookie just after the first; that isn't token theft. */
     private static final Duration ROTATION_GRACE = Duration.ofSeconds(30);
     private static final List<String> LOGO_COLORS = List.of("#2563eb", "#059669", "#dc2626", "#7c3aed", "#d97706");
+    private static final int MAX_LOGIN_FAILURES = 5;
+    private static final int MAX_LOGIN_FAILURES_PER_ADDRESS = 50;
+    private static final Duration LOGIN_WINDOW = Duration.ofMinutes(15);
+    private static final int MAX_EMAIL_REQUESTS = 20;
+    private static final Duration EMAIL_WINDOW = Duration.ofHours(1);
+    private static final int MAX_RESET_FAILURES = 20;
+    private static final Duration VERIFICATION_LIFETIME = Duration.ofHours(24);
 
     private final UserRepository users;
     private final BeneficiaryProfileRepository beneficiaries;
@@ -47,7 +57,10 @@ public class AuthService {
     private final PasswordEncoder passwordEncoder;
     private final JwtEncoder jwtEncoder;
     private final AppProperties properties;
-    private final PasswordResetMailer mailer;
+    private final TokenRepositories.EmailVerificationTokenRepository verificationTokens;
+    private final AccountEmails emails;
+    private final Mailer mailer;
+    private final AttemptLimiter limiter;
 
     private String unknownAccountHash;
 
@@ -64,19 +77,42 @@ public class AuthService {
     }
 
     @Transactional
-    public Session login(AuthDtos.LoginRequest request) {
-        User user = users.findByEmail(normaliseEmail(request.email())).orElse(null);
+    public Session login(AuthDtos.LoginRequest request, String clientIp) {
+        String email = normaliseEmail(request.email());
+        // The pair limits guessing one account's password. The address limits trying many accounts.
+        String accountKey = "login:" + email + "|" + clientIp;
+        String addressKey = "login-ip:" + clientIp;
+        limiter.check(accountKey, MAX_LOGIN_FAILURES, LOGIN_WINDOW);
+        limiter.check(addressKey, MAX_LOGIN_FAILURES_PER_ADDRESS, LOGIN_WINDOW);
+
+        User user = users.findByEmail(email).orElse(null);
         // Hash even for an unknown email, so response time doesn't reveal which accounts exist.
         String hash = user != null ? user.getPasswordHash() : unknownAccountHash;
         boolean matches = passwordEncoder.matches(request.password(), hash);
         if (user == null || !matches) {
+            limiter.record(accountKey, LOGIN_WINDOW);
+            limiter.record(addressKey, LOGIN_WINDOW);
             throw new ApiException(HttpStatus.UNAUTHORIZED, "INVALID_CREDENTIALS", "The email or password is incorrect.");
         }
+        limiter.reset(accountKey);
         return startSession(user, request.rememberMe());
     }
 
     @Transactional
     public Session register(AuthDtos.RegisterRequest request) {
+        // With no mail service nobody could ever confirm, so the step is skipped.
+        User user = createAccount(request, !mailer.isEnabled(), ApprovalStatus.PENDING);
+        if (mailer.isEnabled()) sendVerification(user);
+        return startSession(user, false);
+    }
+
+    /** Fictional accounts for demos, which nobody needs to confirm or approve. */
+    @Transactional
+    public void registerDemoAccount(AuthDtos.RegisterRequest request) {
+        createAccount(request, true, ApprovalStatus.APPROVED);
+    }
+
+    private User createAccount(AuthDtos.RegisterRequest request, boolean emailVerified, ApprovalStatus approvalStatus) {
         String email = normaliseEmail(request.email());
         if (users.existsByEmail(email)) {
             throw ApiException.fieldError(HttpStatus.CONFLICT, "email", "This email is already registered. Try signing in instead.");
@@ -89,6 +125,7 @@ public class AuthService {
         user.setPhone(request.phone().trim());
         user.setPasswordHash(passwordEncoder.encode(request.password()));
         user.setCreatedAt(Instant.now());
+        user.setEmailVerified(emailVerified);
         users.saveAndFlush(user);
 
         if (request.role() == Role.lender) {
@@ -98,6 +135,7 @@ public class AuthService {
             profile.setContactPerson(request.contactPerson().trim());
             profile.setLicenseNumber(request.licenseNumber().trim());
             profile.setLogoColor(LOGO_COLORS.get(Math.floorMod(user.getId().hashCode(), LOGO_COLORS.size())));
+            profile.setApprovalStatus(approvalStatus);
             lenders.save(profile);
         } else {
             BeneficiaryProfile profile = new BeneficiaryProfile();
@@ -105,7 +143,7 @@ public class AuthService {
             profile.setName(request.name().trim());
             beneficiaries.save(profile);
         }
-        return startSession(user, false);
+        return user;
     }
 
     @Transactional(noRollbackFor = ApiException.class)
@@ -140,7 +178,10 @@ public class AuthService {
     }
 
     @Transactional
-    public void requestPasswordReset(String email) {
+    public void requestPasswordReset(String email, String clientIp) {
+        String key = "forgot:" + clientIp;
+        limiter.check(key, MAX_EMAIL_REQUESTS, EMAIL_WINDOW);
+        limiter.record(key, EMAIL_WINDOW);
         // The controller answers the same way either way, so accounts can't be discovered.
         users.findByEmail(normaliseEmail(email)).ifPresent(user -> {
             resetTokens.findByUserIdAndUsedFalse(user.getId()).forEach(old -> old.setUsed(true));
@@ -150,19 +191,60 @@ public class AuthService {
             reset.setTokenHash(Hashing.sha256(token));
             reset.setExpiresAt(Instant.now().plus(properties.passwordReset().minutes(), ChronoUnit.MINUTES));
             resetTokens.save(reset);
-            mailer.send(user.getEmail(), token);
+            emails.sendPasswordReset(user.getEmail(), token);
         });
     }
 
     @Transactional
-    public void resetPassword(AuthDtos.ResetPasswordRequest request) {
+    public void resetPassword(AuthDtos.ResetPasswordRequest request, String clientIp) {
+        String key = "reset:" + clientIp;
+        limiter.check(key, MAX_RESET_FAILURES, LOGIN_WINDOW);
         PasswordResetToken reset = resetTokens.findByTokenHash(Hashing.sha256(request.token()))
                 .filter(candidate -> !candidate.isUsed() && candidate.getExpiresAt().isAfter(Instant.now()))
-                .orElseThrow(() -> new ApiException(HttpStatus.BAD_REQUEST, "INVALID_RESET_TOKEN", "This reset link is invalid or has expired. Please request a new one."));
+                .orElse(null);
+        if (reset == null) {
+            limiter.record(key, LOGIN_WINDOW);
+            throw new ApiException(HttpStatus.BAD_REQUEST, "INVALID_RESET_TOKEN", "This reset link is invalid or has expired. Please request a new one.");
+        }
         User user = users.findById(reset.getUserId()).orElseThrow();
         user.setPasswordHash(passwordEncoder.encode(request.password()));
         reset.setUsed(true);
         refreshTokens.revokeAllForUser(user.getId());
+    }
+
+    private void sendVerification(User user) {
+        verificationTokens.findByUserIdAndUsedFalse(user.getId()).forEach(old -> old.setUsed(true));
+        String token = Ids.randomToken();
+        EmailVerificationToken verification = new EmailVerificationToken();
+        verification.setUserId(user.getId());
+        verification.setTokenHash(Hashing.sha256(token));
+        verification.setExpiresAt(Instant.now().plus(VERIFICATION_LIFETIME));
+        verificationTokens.save(verification);
+        emails.sendEmailVerification(user.getEmail(), token);
+    }
+
+    @Transactional
+    public void verifyEmail(AuthDtos.VerifyEmailRequest request, String clientIp) {
+        String key = "verify:" + clientIp;
+        limiter.check(key, MAX_RESET_FAILURES, LOGIN_WINDOW);
+        EmailVerificationToken verification = verificationTokens.findByTokenHash(Hashing.sha256(request.token()))
+                .filter(candidate -> !candidate.isUsed() && candidate.getExpiresAt().isAfter(Instant.now()))
+                .orElse(null);
+        if (verification == null) {
+            limiter.record(key, LOGIN_WINDOW);
+            throw new ApiException(HttpStatus.BAD_REQUEST, "INVALID_VERIFICATION_TOKEN", "This link is invalid or has expired. Sign in to request a new one.");
+        }
+        verification.setUsed(true);
+        users.findById(verification.getUserId()).orElseThrow().setEmailVerified(true);
+    }
+
+    @Transactional
+    public void resendVerification(String userId) {
+        String key = "resend:" + userId;
+        limiter.check(key, MAX_EMAIL_REQUESTS, EMAIL_WINDOW);
+        limiter.record(key, EMAIL_WINDOW);
+        User user = users.findById(userId).orElseThrow(() -> new ApiException(HttpStatus.UNAUTHORIZED, "UNAUTHENTICATED", "Please sign in."));
+        if (!user.isEmailVerified() && mailer.isEnabled()) sendVerification(user);
     }
 
     @Transactional
@@ -184,8 +266,13 @@ public class AuthService {
         if (!email.equals(user.getEmail()) && users.existsByEmail(email)) {
             throw ApiException.fieldError(HttpStatus.CONFLICT, "email", "This email is already registered.");
         }
+        boolean emailChanged = !email.equals(user.getEmail());
         user.setEmail(email);
         user.setPhone(request.phone().trim());
+        if (emailChanged && mailer.isEnabled()) {
+            user.setEmailVerified(false);
+            sendVerification(user);
+        }
 
         BeneficiaryProfile profile = beneficiaries.findById(userId).orElseThrow();
         profile.setName(request.name().trim());
@@ -232,13 +319,15 @@ public class AuthService {
     }
 
     private UserDto toDto(User user) {
+        // If the mail service is turned off later, people mustn't be stuck waiting on an email that can't come.
+        boolean emailVerified = user.isEmailVerified() || !mailer.isEnabled();
         if (user.getRole() == Role.lender) {
             LenderProfile profile = lenders.findById(user.getId()).orElseThrow();
             return new LenderDto(user.getId(), Role.lender, profile.getInstitutionName(), profile.getContactPerson(),
-                    user.getEmail(), user.getPhone(), profile.getLicenseNumber());
+                    user.getEmail(), user.getPhone(), profile.getLicenseNumber(), emailVerified, profile.getApprovalStatus());
         }
         BeneficiaryProfile profile = beneficiaries.findById(user.getId()).orElseThrow();
         return new BeneficiaryDto(user.getId(), Role.beneficiary, profile.getName(), user.getEmail(), user.getPhone(), profile.getAge(),
-                profile.getOccupation(), profile.getAddress(), profile.getCity(), profile.getState(), profile.getPincode());
+                profile.getOccupation(), profile.getAddress(), profile.getCity(), profile.getState(), profile.getPincode(), emailVerified);
     }
 }

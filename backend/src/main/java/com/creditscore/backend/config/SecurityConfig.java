@@ -38,8 +38,10 @@ public class SecurityConfig {
 
     private static final int MIN_SECRET_BYTES = 32;
     private static final String[] PUBLIC_POST_ROUTES = {
-        "/auth/login", "/auth/register", "/auth/refresh", "/auth/logout", "/auth/forgot-password", "/auth/reset-password"
+        "/auth/login", "/auth/register", "/auth/refresh", "/auth/logout", "/auth/forgot-password", "/auth/reset-password", "/auth/verify-email"
     };
+    // Guarded by the admin key in LenderAdminController, since the brief has no admin user role.
+    private static final String ADMIN_ROUTES = "/admin/";
 
     private final ObjectMapper objectMapper;
 
@@ -57,7 +59,7 @@ public class SecurityConfig {
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers(HttpMethod.POST, PUBLIC_POST_ROUTES).permitAll()
-                        .requestMatchers("/health").permitAll()
+                        .requestMatchers("/health", ADMIN_ROUTES + "**").permitAll()
                         .requestMatchers("/applications/**", "/lenders").hasAuthority("beneficiary")
                         .requestMatchers("/lender/**").hasAuthority("lender")
                         .anyRequest().authenticated())
@@ -81,7 +83,7 @@ public class SecurityConfig {
         List<String> publicRoutes = List.of(PUBLIC_POST_ROUTES);
         return request -> {
             String path = request.getRequestURI().substring(request.getContextPath().length());
-            return publicRoutes.contains(path) ? null : resolver.resolve(request);
+            return publicRoutes.contains(path) || path.startsWith(ADMIN_ROUTES) ? null : resolver.resolve(request);
         };
     }
 
@@ -126,8 +128,8 @@ public class SecurityConfig {
     CorsConfigurationSource corsConfigurationSource(AppProperties properties) {
         CorsConfiguration config = new CorsConfiguration();
         config.setAllowedOrigins(properties.cors().allowedOrigins());
-        config.setAllowedMethods(List.of("GET", "POST", "PATCH", "OPTIONS"));
-        config.setAllowedHeaders(List.of("Authorization", "Content-Type"));
+        config.setAllowedMethods(List.of("GET", "POST", "PATCH", "DELETE", "OPTIONS"));
+        config.setAllowedHeaders(List.of("Authorization", "Content-Type", "X-Admin-Key"));
         config.setAllowCredentials(true);
         UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
         source.registerCorsConfiguration("/**", config);

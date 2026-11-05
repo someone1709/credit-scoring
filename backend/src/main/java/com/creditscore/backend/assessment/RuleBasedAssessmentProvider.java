@@ -13,7 +13,7 @@ import java.util.Locale;
 import org.springframework.stereotype.Component;
 
 /**
- * Illustrative rules, used when the ML service is off or fails. They match frontend/src/lib/assessment.ts.
+ * Illustrative rules, used when the ML service is off or fails. They match frontend/src/lib/assessment.js.
  * probability_of_default and model_confidence stay null because no model produced them (Master Brief §6.5).
  * Every threshold is a placeholder for the team to confirm.
  */
@@ -78,7 +78,7 @@ public class RuleBasedAssessmentProvider implements AssessmentProvider {
     }
 
     /** A separate measure from risk: 70% inverse risk, 30% affordability. Higher is more favourable. */
-    private static int compositeScore(int risk, double surplusShare) {
+    static int compositeScore(int risk, double surplusShare) {
         double affordability = Math.max(0, Math.min(100, surplusShare * 200)); // 50% of income left scores 100
         return clamp((int) Math.round(0.7 * (100 - risk) + 0.3 * affordability));
     }
@@ -87,20 +87,20 @@ public class RuleBasedAssessmentProvider implements AssessmentProvider {
         return Math.max(0, Math.min(100, score));
     }
 
-    private static RiskCategory categoryFor(int risk) {
+    static RiskCategory categoryFor(int risk) {
         if (risk <= 30) return RiskCategory.LOW;
         if (risk <= 60) return RiskCategory.MEDIUM;
         return RiskCategory.HIGH;
     }
 
-    private static IncomeBracket bracketFor(double income) {
+    static IncomeBracket bracketFor(double income) {
         if (income <= 0) return IncomeBracket.UNKNOWN;
         if (income >= 50000) return IncomeBracket.HIGH_INCOME;
         if (income >= 25000) return IncomeBracket.MID_INCOME;
         return IncomeBracket.LOW_INCOME;
     }
 
-    private static Segment segmentFor(int composite, IncomeBracket bracket) {
+    static Segment segmentFor(int composite, IncomeBracket bracket) {
         if (composite >= 75 && bracket == IncomeBracket.HIGH_INCOME) return Segment.PRIME;
         if (composite >= 70 && bracket == IncomeBracket.LOW_INCOME) return Segment.LOW_INCOME_PRIME;
         if (composite >= 70) return Segment.STANDARD_PLUS;

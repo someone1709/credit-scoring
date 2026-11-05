@@ -31,6 +31,9 @@ class WorkflowApiTest extends ApiTestSupport {
     @Autowired
     TransactionTemplate transactions;
 
+    @Autowired
+    com.creditscore.backend.application.DocumentFileRepository documentFiles;
+
     private ResultActions decide(Account lender, String id, String status, String note) throws Exception {
         Map<String, Object> body = note == null ? Map.of("status", status) : Map.of("status", status, "note", note);
         return postJson("/lender/applications/" + id + "/decision", lender, body);
@@ -452,6 +455,136 @@ class WorkflowApiTest extends ApiTestSupport {
 
         assertThat(getJson("/notifications", waiting).andReturn().getResponse().getContentAsString()).contains("Document Uploaded");
         assertThat(getJson("/notifications", other).andReturn().getResponse().getContentAsString()).doesNotContain("Document Uploaded");
+    }
+
+    // --- Reading stored documents
+
+    private static final byte[] PNG_BYTES = {(byte) 0x89, 'P', 'N', 'G', '\r', '\n', 0x1A, '\n', 1, 2, 3, 4};
+
+    @Test
+    void theOwnerAndChosenLendersCanOpenAPassedFileAndNobodyElse() throws Exception {
+        Account owner = newBeneficiaryWithProfile();
+        Account stranger = newBeneficiaryWithProfile();
+        Account chosen = newLender("File Chosen Bank");
+        Account outsider = newLender("File Outsider Bank");
+        String id = submit(owner, chosen);
+        String doc = id + "-DOC1";
+
+        JsonNode uploaded = body(upload(owner, id, 1, "income.pdf", "application/pdf", PDF_BYTES).andExpect(status().isOk()));
+        assertThat(uploaded.at("/documents/0/file_available").asBoolean()).isTrue();
+        assertThat(uploaded.at("/documents/1/file_available").asBoolean()).isFalse();
+
+        var forOwner = getJson("/applications/" + id + "/documents/" + doc + "/file", owner).andExpect(status().isOk()).andReturn().getResponse();
+        assertThat(forOwner.getContentAsByteArray()).isEqualTo(PDF_BYTES);
+
+        var forLender = getJson("/lender/applications/" + id + "/documents/" + doc + "/file", chosen).andExpect(status().isOk()).andReturn().getResponse();
+        assertThat(forLender.getContentAsByteArray()).isEqualTo(PDF_BYTES);
+        assertThat(forLender.getContentType()).isEqualTo("application/pdf");
+
+        getJson("/applications/" + id + "/documents/" + doc + "/file", stranger).andExpect(status().isNotFound());
+        getJson("/lender/applications/" + id + "/documents/" + doc + "/file", outsider).andExpect(status().isNotFound());
+        getJson("/lender/applications/" + id + "/documents/" + doc + "/file", owner).andExpect(status().isForbidden());
+        getJson("/applications/" + id + "/documents/" + doc + "/file", chosen).andExpect(status().isForbidden());
+        getJson("/applications/" + id + "/documents/" + doc + "/file", null).andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    void aFileIsServedSoABrowserCantRunIt() throws Exception {
+        Account owner = newBeneficiaryWithProfile();
+        Account lender = newLender("Header Bank");
+        String id = submit(owner, lender);
+        upload(owner, id, 1, "scan \"final\".png", "text/html", PNG_BYTES).andExpect(status().isOk());
+
+        var response = getJson("/lender/applications/" + id + "/documents/" + id + "-DOC1/file", lender).andExpect(status().isOk()).andReturn().getResponse();
+        // The type comes from the checked file, not from what the uploader claimed.
+        assertThat(response.getContentType()).isEqualTo("image/png");
+        assertThat(response.getHeader("X-Content-Type-Options")).isEqualTo("nosniff");
+        assertThat(response.getHeader("Content-Security-Policy")).contains("sandbox");
+        assertThat(response.getHeader("Cache-Control")).contains("no-store");
+        assertThat(response.getHeader("Content-Disposition")).startsWith("attachment");
+    }
+
+    @Test
+    void aFileThatFailedItsChecksIsNeverKept() throws Exception {
+        Account owner = newBeneficiaryWithProfile();
+        Account lender = newLender("Failed File Bank");
+        String id = submit(owner, lender);
+        JsonNode failed = body(upload(owner, id, 1, "virus.exe", "application/octet-stream", new byte[] {1, 2, 3}));
+        assertThat(failed.at("/documents/0/verification_status").asText()).isEqualTo("CHECKS_FAILED");
+        assertThat(failed.at("/documents/0/file_available").asBoolean()).isFalse();
+        getJson("/lender/applications/" + id + "/documents/" + id + "-DOC1/file", lender).andExpect(status().isNotFound());
+        assertThat(documentFiles.existsById(id + "-DOC1")).isFalse();
+    }
+
+    @Test
+    void aLenderWhoseOfferLostCanNoLongerOpenFiles() throws Exception {
+        Account owner = newBeneficiaryWithProfile();
+        Account winner = newLender("File Winner");
+        Account loser = newLender("File Loser");
+        String id = submit(owner, winner, loser);
+        upload(owner, id, 1, "income.pdf", "application/pdf", PDF_BYTES).andExpect(status().isOk());
+        String path = "/lender/applications/" + id + "/documents/" + id + "-DOC1/file";
+
+        getJson(path, loser).andExpect(status().isOk());
+        String offerId = offer(winner, id);
+        postJson("/applications/" + id + "/offers/" + offerId + "/accept", owner, null).andExpect(status().isOk());
+
+        getJson(path, loser).andExpect(status().isNotFound());
+        assertThat(body(getJson("/lender/applications/" + id, loser)).at("/documents/0/file_available").asBoolean()).isFalse();
+        getJson(path, winner).andExpect(status().isOk());
+        assertThat(body(getJson("/lender/applications/" + id, winner)).at("/documents/0/file_available").asBoolean()).isTrue();
+    }
+
+    @Test
+    void filesAreEncryptedInTheDatabase() throws Exception {
+        Account owner = newBeneficiaryWithProfile();
+        String id = submit(owner, newLender("Encrypt Bank"));
+        byte[] secret = "%PDF-1.4 my private bank statement".getBytes();
+        upload(owner, id, 1, "bank.pdf", "application/pdf", secret).andExpect(status().isOk());
+
+        byte[] stored = documentFiles.findById(id + "-DOC1").orElseThrow().getContent();
+        assertThat(new String(stored, java.nio.charset.StandardCharsets.ISO_8859_1)).doesNotContain("private bank statement").doesNotContain("%PDF");
+        assertThat(stored.length).isGreaterThan(secret.length);
+    }
+
+    @Test
+    void oneEncryptedFileCannotBeSwappedOntoAnotherDocument() throws Exception {
+        Account owner = newBeneficiaryWithProfile();
+        String id = submit(owner, newLender("Swap Bank"));
+        upload(owner, id, 1, "income.pdf", "application/pdf", PDF_BYTES).andExpect(status().isOk());
+        upload(owner, id, 2, "bank.pdf", "application/pdf", PDF_BYTES).andExpect(status().isOk());
+
+        var first = documentFiles.findById(id + "-DOC1").orElseThrow();
+        var second = documentFiles.findById(id + "-DOC2").orElseThrow();
+        second.setContent(first.getContent());
+        documentFiles.save(second);
+
+        getJson("/applications/" + id + "/documents/" + id + "-DOC2/file", owner).andExpect(status().isInternalServerError());
+    }
+
+    @Test
+    void anOlderUploadWithNoFileCanBeUploadedAgain() throws Exception {
+        Account owner = newBeneficiaryWithProfile();
+        String id = submit(owner, newLender("Older Upload Bank"));
+        upload(owner, id, 1, "income.pdf", "application/pdf", PDF_BYTES).andExpect(status().isOk());
+        documentFiles.deleteById(id + "-DOC1");
+
+        JsonNode app = body(getJson("/applications/" + id, owner));
+        assertThat(app.at("/documents/0/verification_status").asText()).isEqualTo("CHECKS_PASSED");
+        assertThat(app.at("/documents/0/file_available").asBoolean()).isFalse();
+
+        JsonNode again = body(upload(owner, id, 1, "income.pdf", "application/pdf", PDF_BYTES).andExpect(status().isOk()));
+        assertThat(again.at("/documents/0/file_available").asBoolean()).isTrue();
+    }
+
+    @Test
+    void listingApplicationsNeverCarriesFileContents() throws Exception {
+        Account owner = newBeneficiaryWithProfile();
+        Account lender = newLender("List Bank");
+        String id = submit(owner, lender);
+        upload(owner, id, 1, "income.pdf", "application/pdf", "%PDF-1.4 unique-marker-text".getBytes()).andExpect(status().isOk());
+        assertThat(getJson("/applications", owner).andReturn().getResponse().getContentAsString()).doesNotContain("unique-marker-text").doesNotContain("JVBER");
+        assertThat(getJson("/lender/applications", lender).andReturn().getResponse().getContentAsString()).doesNotContain("unique-marker-text").doesNotContain("JVBER");
     }
 
     // --- Notifications

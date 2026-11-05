@@ -10,6 +10,7 @@ import com.creditscore.backend.assessment.AssessmentContract.VerificationStatus;
 import com.creditscore.backend.assessment.AssessmentProvider;
 import com.creditscore.backend.common.ApiException;
 import com.creditscore.backend.common.Ids;
+import com.creditscore.backend.common.Mailer;
 import com.creditscore.backend.notification.Notification;
 import com.creditscore.backend.notification.NotificationService;
 import com.creditscore.backend.user.BeneficiaryProfile;
@@ -25,7 +26,7 @@ import java.math.BigDecimal;
 import java.text.NumberFormat;
 import java.time.Instant;
 import java.time.LocalDate;
-import java.time.ZoneOffset;
+import java.time.ZoneId;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
@@ -33,22 +34,27 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Set;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
 
 /**
- * The lending workflow. These rules match frontend/src/lib/workflow.ts, and the server is what enforces them:
+ * The lending workflow. These rules match frontend/src/lib/workflow.js, and the server is what enforces them:
  * one lender can't affect another, and nobody reaches data that isn't theirs.
  */
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class ApplicationService {
 
     private static final int OFFER_VALIDITY_DAYS = 30;
     private static final String NOT_FOUND = "This application doesn't exist or isn't available to you.";
+    private static final String FILE_NOT_FOUND = "This file isn't available.";
     private static final Locale INDIA = Locale.of("en", "IN");
+    // Step dates are shown to people in India, whatever time zone the server runs in.
+    private static final ZoneId INDIA_TIME = ZoneId.of("Asia/Kolkata");
     private static final List<String> DISBURSEMENT_LABELS = List.of(
             "Offer Accepted", "Agreement Signed", "Verification Complete (Simulated)", "Disbursement Initiated", "Amount Credited (Simulated)");
 
@@ -68,6 +74,12 @@ public class ApplicationService {
     private final AssessmentProvider assessmentProvider;
     private final NotificationService notifications;
     private final ApplicationMapper mapper;
+    private final DocumentFileRepository documentFiles;
+    private final DocumentCipher documentCipher;
+    private final Mailer mailer;
+
+    /** A decrypted document, on its way to someone allowed to see it. */
+    public record FileDownload(String filename, String contentType, byte[] content) {}
 
     // ============================================================
     // Derived state
@@ -111,6 +123,22 @@ public class ApplicationService {
         decision.setStatus(status);
         decision.setNote(note);
         decision.setLastUpdated(now);
+        // A new question starts fresh. Otherwise the applicant's last answer stays visible to the lender.
+        if (status == DecisionStatus.INFO_REQUESTED) {
+            decision.setApplicantReply(null);
+            decision.setApplicantReplyAt(null);
+        }
+    }
+
+    private static boolean won(LoanApplication app, String lenderId) {
+        return app.acceptedOffer().filter(offer -> offer.getLenderId().equals(lenderId)).isPresent();
+    }
+
+    /** Takes back any live offer and all access. Past offers stay on record for the applicant. */
+    private static void removeLender(LoanApplication app, String lenderId, Instant now) {
+        app.liveOfferFrom(lenderId).ifPresent(offer -> offer.setStatus(OfferStatus.WITHDRAWN));
+        app.getLenderDecisions().removeIf(decision -> decision.getLenderId().equals(lenderId));
+        refreshStatus(app, now);
     }
 
     private static String inr(BigDecimal amount) {
@@ -137,10 +165,13 @@ public class ApplicationService {
         if (!profile.isComplete(user.getPhone())) {
             throw new ApiException(HttpStatus.CONFLICT, "PROFILE_INCOMPLETE", "Complete your profile before applying for a loan.");
         }
+        if (mailer.isEnabled() && !user.isEmailVerified()) {
+            throw new ApiException(HttpStatus.FORBIDDEN, "EMAIL_NOT_VERIFIED", "Confirm your email address before applying for a loan.");
+        }
 
         Set<String> lenderIds = new LinkedHashSet<>(request.lenderIds());
         List<LenderProfile> chosen = lenders.findAllById(lenderIds);
-        if (chosen.size() != lenderIds.size()) {
+        if (chosen.size() != lenderIds.size() || !chosen.stream().allMatch(LenderProfile::isApproved)) {
             throw ApiException.fieldError(HttpStatus.UNPROCESSABLE_ENTITY, "lender_ids", "Choose lenders from the list");
         }
 
@@ -268,7 +299,7 @@ public class ApplicationService {
             step.setPosition(i);
             step.setLabel(DISBURSEMENT_LABELS.get(i));
             step.setStatus(i == 0 ? StepStatus.completed : i == 1 ? StepStatus.current : StepStatus.pending);
-            step.setCompletedOn(i == 0 ? LocalDate.ofInstant(now, ZoneOffset.UTC) : null);
+            step.setCompletedOn(i == 0 ? LocalDate.ofInstant(now, INDIA_TIME) : null);
             app.getDisbursementSteps().add(step);
         }
         refreshStatus(app, now);
@@ -298,7 +329,8 @@ public class ApplicationService {
                 .filter(candidate -> candidate.getId().equals(documentId))
                 .findFirst()
                 .orElseThrow(() -> ApiException.notFound("This document could not be found."));
-        if (document.getVerificationStatus() == VerificationStatus.CHECKS_PASSED) {
+        // Older uploads passed before files were kept, so those can be uploaded again.
+        if (document.getVerificationStatus() == VerificationStatus.CHECKS_PASSED && documentFiles.existsById(document.getId())) {
             throw ApiException.conflict("This document has already passed its checks.");
         }
 
@@ -310,6 +342,14 @@ public class ApplicationService {
         document.setUploadedAt(now);
         document.setVerificationStatus(result.passed() ? VerificationStatus.CHECKS_PASSED : VerificationStatus.CHECKS_FAILED);
         document.setCheckNote(result.note());
+        // Only a file that passed is kept, so nothing else ever reaches a lender.
+        if (result.passed()) {
+            DocumentFile stored = new DocumentFile();
+            stored.setDocumentId(document.getId());
+            stored.setContentType(DocumentChecks.contentType(filename));
+            stored.setContent(documentCipher.encrypt(contentsOf(file), document.getId()));
+            documentFiles.save(stored);
+        }
         if (app.getAssessment() != null) app.getAssessment().setVerificationStatus(deriveVerification(app.getDocuments()));
         app.setLastUpdatedAt(now);
 
@@ -321,6 +361,94 @@ public class ApplicationService {
                             document.getLabel() + " was uploaded for application #" + app.getId() + ", where you asked for more information."));
         }
         return mapper.forBeneficiary(app);
+    }
+
+    /** The file and what's known about it both go, and the slot can be used again. */
+    @Transactional
+    public ApplicationDto deleteDocument(String beneficiaryId, String applicationId, String documentId) {
+        LoanApplication app = lockOwn(beneficiaryId, applicationId);
+        if (app.acceptedOffer().isPresent()) {
+            throw ApiException.conflict("You've accepted an offer that relies on these documents, so they can no longer be removed.");
+        }
+        ApplicationDocument document = app.getDocuments().stream()
+                .filter(candidate -> candidate.getId().equals(documentId))
+                .findFirst()
+                .orElseThrow(() -> ApiException.notFound("This document could not be found."));
+        if (document.getVerificationStatus() == VerificationStatus.NOT_PROVIDED) {
+            throw ApiException.conflict("Nothing has been uploaded here.");
+        }
+        documentFiles.findById(documentId).ifPresent(documentFiles::delete);
+        document.setFilename(null);
+        document.setUploadedAt(null);
+        document.setVerificationStatus(VerificationStatus.NOT_PROVIDED);
+        document.setCheckNote(null);
+        if (app.getAssessment() != null) app.getAssessment().setVerificationStatus(deriveVerification(app.getDocuments()));
+        app.setLastUpdatedAt(Instant.now());
+        return mapper.forBeneficiary(app);
+    }
+
+    /** Sharing was the applicant's choice, so they can take it back, except from the lender holding their loan. */
+    @Transactional
+    public ApplicationDto revokeLender(String beneficiaryId, String applicationId, String lenderId) {
+        LoanApplication app = lockOwn(beneficiaryId, applicationId);
+        if (app.decisionOf(lenderId).isEmpty()) throw ApiException.notFound("This lender doesn't have access to this application.");
+        if (won(app, lenderId)) throw ApiException.conflict("You've accepted this lender's offer, so it keeps access to this application.");
+
+        removeLender(app, lenderId, Instant.now());
+        notifications.notify(lenderId, Notification.Type.info, "Access Removed", "The applicant removed your access to application #" + app.getId() + ".");
+        return mapper.forBeneficiary(app);
+    }
+
+    @Transactional
+    public ApplicationDto replyToLender(String beneficiaryId, String applicationId, String lenderId, ApplicationDtos.ReplyRequest request) {
+        LoanApplication app = lockOwn(beneficiaryId, applicationId);
+        LenderDecision decision = app.decisionOf(lenderId).orElseThrow(() -> ApiException.notFound("This lender doesn't have access to this application."));
+        if (decision.getStatus() != DecisionStatus.INFO_REQUESTED) throw ApiException.conflict("This lender isn't waiting for information from you.");
+
+        Instant now = Instant.now();
+        String message = request.message().trim();
+        decision.setApplicantReply(message);
+        decision.setApplicantReplyAt(now);
+        app.setLastUpdatedAt(now);
+        notifications.notify(lenderId, Notification.Type.info, "Applicant Replied", "On application #" + app.getId() + ": " + message);
+        return mapper.forBeneficiary(app);
+    }
+
+    private static byte[] contentsOf(MultipartFile file) {
+        try {
+            return file.getBytes();
+        } catch (IOException e) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "BAD_REQUEST", "The file could not be read.");
+        }
+    }
+
+    @Transactional(readOnly = true)
+    public FileDownload documentForBeneficiary(String beneficiaryId, String applicationId, String documentId) {
+        LoanApplication app = applications.findById(applicationId)
+                .filter(candidate -> candidate.getBeneficiaryId().equals(beneficiaryId))
+                .orElseThrow(() -> ApiException.notFound(FILE_NOT_FOUND));
+        return readFile(app, documentId);
+    }
+
+    /** A lender whose offer didn't win loses access, because they no longer have a reason to see it. */
+    @Transactional(readOnly = true)
+    public FileDownload documentForLender(String lenderId, String applicationId, String documentId) {
+        LoanApplication app = applications.findById(applicationId)
+                .filter(candidate -> canSee(candidate, lenderId))
+                .filter(candidate -> candidate.acceptedOffer().map(offer -> offer.getLenderId().equals(lenderId)).orElse(true))
+                .orElseThrow(() -> ApiException.notFound(FILE_NOT_FOUND));
+        FileDownload download = readFile(app, documentId);
+        log.info("Lender {} opened document {}", lenderId, documentId);
+        return download;
+    }
+
+    private FileDownload readFile(LoanApplication app, String documentId) {
+        ApplicationDocument document = app.getDocuments().stream()
+                .filter(candidate -> candidate.getId().equals(documentId))
+                .findFirst()
+                .orElseThrow(() -> ApiException.notFound(FILE_NOT_FOUND));
+        DocumentFile stored = documentFiles.findById(documentId).orElseThrow(() -> ApiException.notFound(FILE_NOT_FOUND));
+        return new FileDownload(document.getFilename(), stored.getContentType(), documentCipher.decrypt(stored.getContent(), documentId));
     }
 
     private static byte[] firstBytes(MultipartFile file) {
@@ -335,15 +463,27 @@ public class ApplicationService {
     // Lender
     // ============================================================
 
+    /**
+     * The application must be shared with this lender, and the platform must have approved it.
+     * An institution that later loses approval keeps only loans already accepted from it, so those aren't stranded.
+     */
+    private boolean canSee(LoanApplication app, String lenderId) {
+        if (app.decisionOf(lenderId).isEmpty()) return false;
+        return won(app, lenderId) || lenders.findById(lenderId).map(LenderProfile::isApproved).orElse(false);
+    }
+
     @Transactional(readOnly = true)
     public List<ApplicationDto> listForLender(String lenderId) {
-        return applications.findSharedWith(lenderId).stream().map(app -> mapper.forLender(app, lenderId)).toList();
+        return applications.findSharedWith(lenderId).stream()
+                .filter(app -> canSee(app, lenderId))
+                .map(app -> mapper.forLender(app, lenderId))
+                .toList();
     }
 
     @Transactional(readOnly = true)
     public ApplicationDto getForLender(String lenderId, String applicationId) {
         return applications.findById(applicationId)
-                .filter(app -> app.decisionOf(lenderId).isPresent())
+                .filter(app -> canSee(app, lenderId))
                 .map(app -> mapper.forLender(app, lenderId))
                 .orElseThrow(() -> ApiException.notFound(NOT_FOUND));
     }
@@ -351,7 +491,7 @@ public class ApplicationService {
     /** An application that wasn't shared looks exactly like one that doesn't exist. */
     private LoanApplication lockShared(String lenderId, String applicationId) {
         return applications.findForUpdate(applicationId)
-                .filter(app -> app.decisionOf(lenderId).isPresent())
+                .filter(app -> canSee(app, lenderId))
                 .orElseThrow(() -> ApiException.notFound(NOT_FOUND));
     }
 
@@ -474,7 +614,7 @@ public class ApplicationService {
         Instant now = Instant.now();
         DisbursementStep step = steps.get(current);
         step.setStatus(StepStatus.completed);
-        step.setCompletedOn(LocalDate.ofInstant(now, ZoneOffset.UTC));
+        step.setCompletedOn(LocalDate.ofInstant(now, INDIA_TIME));
         if (current + 1 < steps.size()) steps.get(current + 1).setStatus(StepStatus.current);
         refreshStatus(app, now);
 
@@ -485,6 +625,24 @@ public class ApplicationService {
             notifications.notify(app.getBeneficiaryId(), Notification.Type.info, "Disbursement Updated", step.getLabel() + " is done for application #" + app.getId() + ".");
         }
         return mapper.forLender(app, lenderId);
+    }
+
+    // ============================================================
+    // Platform
+    // ============================================================
+
+    /** For an institution the platform turned away. Applicants hear about it, and can share elsewhere. */
+    @Transactional
+    public void removeLenderEverywhere(String lenderId) {
+        Instant now = Instant.now();
+        String name = lenderName(lenderId);
+        for (String id : applications.findSharedWith(lenderId).stream().map(LoanApplication::getId).toList()) {
+            LoanApplication app = applications.findForUpdate(id).orElseThrow();
+            if (won(app, lenderId)) continue;
+            removeLender(app, lenderId, now);
+            notifications.notify(app.getBeneficiaryId(), Notification.Type.warning, "Lender No Longer Available",
+                    name + " is no longer available on this platform, so it can't see your application #" + app.getId() + " and any offer from it was withdrawn.");
+        }
     }
 
     // ============================================================

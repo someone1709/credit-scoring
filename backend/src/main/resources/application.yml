@@ -8,10 +8,10 @@ spring:
     url: ${DB_URL:jdbc:mysql://localhost:3306/credit_scoring}
     username: ${DB_USERNAME}
     password: ${DB_PASSWORD}
-  sql:
-    init:
-      mode: always
-      schema-locations: classpath:schema.sql
+  flyway:
+    # A database made before migrations existed counts as already at version 1.
+    baseline-on-migrate: true
+    baseline-version: 1
   jpa:
     hibernate:
       ddl-auto: validate
@@ -34,6 +34,8 @@ spring:
 
 server:
   port: ${SERVER_PORT:8080}
+  # Behind a proxy, read the visitor's address from it, so sign-in limits apply per visitor.
+  forward-headers-strategy: native
   tomcat:
     # Read an oversized upload to the end, so the client gets a clear error instead of a dropped connection.
     max-swallow-size: 12MB
@@ -53,11 +55,25 @@ app:
     cookie-secure: ${APP_COOKIE_SECURE:false}
   password-reset:
     minutes: 30
-    # Where the emailed link points. No mail server is set up, see PasswordResetMailer.
+    # Where emailed links point.
     frontend-url: ${APP_FRONTEND_URL:http://localhost:5175}
+    # With no mail service, print links to this server's log instead. Local development only.
     log-links: ${APP_LOG_RESET_LINKS:false}
+  mail:
+    # Any SMTP service. Leave the host empty to turn email off.
+    host: ${APP_MAIL_HOST:}
+    port: ${APP_MAIL_PORT:587}
+    username: ${APP_MAIL_USERNAME:}
+    password: ${APP_MAIL_PASSWORD:}
+    from: ${APP_MAIL_FROM:}
+    start-tls: ${APP_MAIL_STARTTLS:true}
+  admin:
+    # Unlocks the lender approval page. Leave empty to turn that page off.
+    key: ${APP_ADMIN_KEY:}
   cors:
     allowed-origins: ${APP_CORS_ORIGINS:http://localhost:5173,http://localhost:5174,http://localhost:5175}
+  documents:
+    encryption-key: ${APP_DOCUMENT_KEY}
   ml:
     # Where the FastAPI service runs. Leave empty to use the labelled rule-based scoring.
     url: ${ML_SERVICE_URL:}
